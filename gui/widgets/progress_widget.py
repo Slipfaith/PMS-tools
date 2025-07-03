@@ -1,39 +1,43 @@
-# gui/widgets/progress_widget.py
+# gui/widgets/progress_widget.py - ИСПРАВЛЕНО: Убран ETA, исправлена скорость
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QProgressBar,
     QLabel, QGroupBox, QFrame
 )
-from PySide6.QtCore import Signal, Qt, QTimer, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Signal, Qt, QTimer, QPropertyAnimation, QEasingCurve, QMutex, QMutexLocker
 from PySide6.QtGui import QFont
 from datetime import datetime, timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ProgressWidget(QWidget):
-    """Виджет для отображения прогресса конвертации с анимацией"""
+    """ИСПРАВЛЕНО: Виджет прогресса без ETA, с исправленной скоростью"""
 
     def __init__(self):
         super().__init__()
         self.setup_ui()
+        self.mutex = QMutex()
 
-        # Для расчета времени
+        # Время и статистика
         self.start_time = None
         self.last_update_time = None
-
-        # Счетчики для статистики
         self.successful_files = 0
         self.failed_files = 0
         self.processed_files = 0
+        self.current_file_index = 0
+        self.total_files = 0
 
-        # Таймер для обновления времени
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_elapsed_time)
+        # УБРАНО: Таймер для ETA больше не нужен
+        # Анимация прогресса
+        self.progress_animation = None
 
-        # Инициализируем после создания UI
+        # Инициализация
         self.reset()
 
     def setup_ui(self):
-        """Настройка интерфейса"""
+        """ИСПРАВЛЕНО: Настройка интерфейса без ETA"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
@@ -43,20 +47,24 @@ class ProgressWidget(QWidget):
 
         # Основной прогресс-бар
         self.main_progress = QProgressBar()
-        self.main_progress.setMinimumHeight(25)
+        self.main_progress.setMinimum(0)
+        self.main_progress.setMaximum(100)
+        self.main_progress.setValue(0)
+        self.main_progress.setMinimumHeight(30)
         self.main_progress.setStyleSheet("""
             QProgressBar {
                 border: 2px solid #e0e0e0;
-                border-radius: 12px;
-                background: #f5f5f5;
+                border-radius: 15px;
+                background: #f8f9fa;
                 text-align: center;
                 font-weight: bold;
-                font-size: 12px;
+                font-size: 13px;
+                color: #333;
             }
             QProgressBar::chunk {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 #4CAF50, stop:1 #45a049);
-                border-radius: 10px;
+                border-radius: 13px;
             }
         """)
         progress_layout.addWidget(self.main_progress)
@@ -71,47 +79,38 @@ class ProgressWidget(QWidget):
                 font-size: 14px;
                 color: #333;
                 font-weight: bold;
+                margin: 4px;
             }
         """)
         info_layout.addWidget(self.status_label)
 
         info_layout.addStretch()
 
-        # Процент выполнения
+        # Процент
         self.percent_label = QLabel("0%")
         self.percent_label.setStyleSheet("""
             QLabel {
-                font-size: 14px;
+                font-size: 16px;
                 color: #4CAF50;
                 font-weight: bold;
+                margin: 4px;
             }
         """)
         info_layout.addWidget(self.percent_label)
 
         progress_layout.addLayout(info_layout)
 
-        # Детальная информация
+        # Детальная информация - ТОЛЬКО ФАЙЛЫ
         details_layout = QHBoxLayout()
 
         # Файлы
         self.files_label = QLabel("Файлов: 0 / 0")
-        self.files_label.setStyleSheet("font-size: 12px; color: #666;")
+        self.files_label.setStyleSheet("font-size: 12px; color: #666; margin: 2px;")
         details_layout.addWidget(self.files_label)
 
         details_layout.addStretch()
 
-        # Время
-        self.time_label = QLabel("Время: --:--")
-        self.time_label.setStyleSheet("font-size: 12px; color: #666;")
-        details_layout.addWidget(self.time_label)
-
         progress_layout.addLayout(details_layout)
-
-        # Оценка времени
-        self.eta_label = QLabel("")
-        self.eta_label.setStyleSheet("font-size: 11px; color: #999; font-style: italic;")
-        self.eta_label.setAlignment(Qt.AlignCenter)
-        progress_layout.addWidget(self.eta_label)
 
         layout.addWidget(progress_group)
 
@@ -119,7 +118,6 @@ class ProgressWidget(QWidget):
         stats_group = QGroupBox("📈 Статистика")
         stats_layout = QVBoxLayout(stats_group)
 
-        # Сетка статистики
         stats_grid = QHBoxLayout()
 
         # Успешно
@@ -167,7 +165,7 @@ class ProgressWidget(QWidget):
 
         # Значение
         value_label = QLabel(value)
-        value_label.setObjectName("value")  # Для поиска через findChild
+        value_label.setObjectName("value")
         value_label.setAlignment(Qt.AlignCenter)
         value_label.setStyleSheet(f"""
             QLabel {{
@@ -187,38 +185,58 @@ class ProgressWidget(QWidget):
         return frame
 
     def reset(self):
-        """Сбрасывает все значения"""
-        if hasattr(self, 'main_progress'):
-            self.main_progress.setValue(0)
-        if hasattr(self, 'status_label'):
-            self.status_label.setText("Готов к работе")
-        if hasattr(self, 'percent_label'):
-            self.percent_label.setText("0%")
-        if hasattr(self, 'files_label'):
-            self.files_label.setText("Файлов: 0 / 0")
-        if hasattr(self, 'time_label'):
-            self.time_label.setText("Время: --:--")
-        if hasattr(self, 'eta_label'):
-            self.eta_label.setText("")
+        """ИСПРАВЛЕНО: Полный сброс виджета"""
+        with QMutexLocker(self.mutex):
+            # Сбрасываем значения
+            self.start_time = None
+            self.last_update_time = None
+            self.successful_files = 0
+            self.failed_files = 0
+            self.processed_files = 0
+            self.current_file_index = 0
+            self.total_files = 0
 
-        # Сбрасываем статистику
-        self.successful_files = 0
-        self.failed_files = 0
-        self.processed_files = 0
-        self.update_stats()
+        # Обновляем UI
+        self.main_progress.setValue(0)
+        self.status_label.setText("Готов к работе")
+        self.percent_label.setText("0%")
+        self.files_label.setText("Файлов: 0 / 0")
 
-        # Сбрасываем время
-        self.start_time = None
-        self.last_update_time = None
-        if hasattr(self, 'timer'):
-            self.timer.stop()
+        # Обновляем статистику
+        if self.success_label:
+            self.success_label.setText("0")
+        if self.error_label:
+            self.error_label.setText("0")
+        if self.speed_label:
+            self.speed_label.setText("0/мин")
+
+        # Сбрасываем стили
+        self.reset_styles()
+
+        logger.debug("Progress widget reset completed")
 
     def update_progress(self, progress: int, message: str, current_file: int = 0, total_files: int = 0):
-        """Обновляет основной прогресс"""
-        # Анимированное обновление прогресс-бара
+        """ИСПРАВЛЕНО: Обновление прогресса без ETA"""
+        logger.debug(f"Progress update: {progress}% - {message} ({current_file}/{total_files})")
+
+        with QMutexLocker(self.mutex):
+            # Обновляем счетчики
+            self.current_file_index = current_file
+            if total_files > 0:
+                self.total_files = total_files
+
+            # Стартуем время при первом обновлении
+            if self.start_time is None and progress > 0:
+                self.start_time = datetime.now()
+
+            # Обновляем время последнего изменения
+            if progress > 0:
+                self.last_update_time = datetime.now()
+
+        # Анимируем прогресс
         self.animate_progress(progress)
 
-        # Обновляем текст
+        # Обновляем labels
         self.status_label.setText(message)
         self.percent_label.setText(f"{progress}%")
 
@@ -226,115 +244,79 @@ class ProgressWidget(QWidget):
         if total_files > 0:
             self.files_label.setText(f"Файлов: {current_file} / {total_files}")
 
-        # Запускаем таймер при первом обновлении
-        if self.start_time is None and progress > 0:
-            self.start_time = datetime.now()
-            self.timer.start(1000)  # Обновляем каждую секунду
-
-        # Обновляем время последнего изменения
-        if progress > 0:
-            self.last_update_time = datetime.now()
-
-        # Рассчитываем ETA
-        self.calculate_eta(progress)
-
-        # Останавливаем таймер при завершении
-        if progress >= 100:
-            self.timer.stop()
-
     def animate_progress(self, target_value: int):
-        """Анимирует изменение прогресс-бара"""
-        if not hasattr(self, 'main_progress'):
+        """ИСПРАВЛЕНО: Плавная анимация прогресса"""
+        if not self.main_progress:
             return
 
-        if not hasattr(self, 'progress_animation'):
+        # Создаем анимацию
+        if self.progress_animation is None:
             self.progress_animation = QPropertyAnimation(self.main_progress, b"value")
-            self.progress_animation.setDuration(300)  # 300ms анимация
+            self.progress_animation.setDuration(500)  # 500ms
             self.progress_animation.setEasingCurve(QEasingCurve.OutCubic)
 
+        # Останавливаем текущую анимацию
+        if self.progress_animation.state() == QPropertyAnimation.Running:
+            self.progress_animation.stop()
+
+        # Настраиваем новую анимацию
         current_value = self.main_progress.value()
         self.progress_animation.setStartValue(current_value)
         self.progress_animation.setEndValue(target_value)
         self.progress_animation.start()
 
-    def update_elapsed_time(self):
-        """Обновляет прошедшее время"""
-        if self.start_time:
-            elapsed = datetime.now() - self.start_time
-            hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
-            minutes, seconds = divmod(remainder, 60)
-
-            if hours > 0:
-                time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-            else:
-                time_str = f"{minutes:02d}:{seconds:02d}"
-
-            self.time_label.setText(f"Время: {time_str}")
-
-    def calculate_eta(self, progress: int):
-        """Рассчитывает оценку времени завершения"""
-        if not self.start_time or progress <= 0:
-            self.eta_label.setText("")
-            return
-
-        elapsed = datetime.now() - self.start_time
-        elapsed_seconds = elapsed.total_seconds()
-
-        if elapsed_seconds < 5:  # Слишком рано для оценки
-            return
-
-        # Рассчитываем оставшееся время
-        rate = progress / elapsed_seconds  # процент в секунду
-        if rate > 0:
-            remaining_seconds = (100 - progress) / rate
-            remaining_time = timedelta(seconds=int(remaining_seconds))
-
-            # Форматируем оставшееся время
-            hours, remainder = divmod(int(remaining_seconds), 3600)
-            minutes, seconds = divmod(remainder, 60)
-
-            if hours > 0:
-                eta_str = f"Осталось: ~{hours}ч {minutes}м"
-            elif minutes > 0:
-                eta_str = f"Осталось: ~{minutes}м {seconds}с"
-            else:
-                eta_str = f"Осталось: ~{seconds}с"
-
-            self.eta_label.setText(eta_str)
-
-        # Обновляем скорость (файлов в минуту)
-        if self.processed_files > 0:
-            files_per_minute = (self.processed_files / elapsed_seconds) * 60
-            self.speed_label.setText(f"{files_per_minute:.1f}/мин")
-
     def on_file_completed(self, success: bool):
-        """Вызывается при завершении обработки файла"""
-        self.processed_files += 1
+        """ИСПРАВЛЕНО: Обработка завершения файла с расчетом скорости"""
+        with QMutexLocker(self.mutex):
+            self.processed_files += 1
 
-        if success:
-            self.successful_files += 1
-        else:
-            self.failed_files += 1
+            if success:
+                self.successful_files += 1
+            else:
+                self.failed_files += 1
 
+            # ИСПРАВЛЕНО: Рассчитываем скорость здесь
+            start_time = self.start_time
+
+        # Обновляем статистику
         self.update_stats()
 
-    def update_stats(self):
-        """Обновляет статистику"""
-        if hasattr(self, 'success_label'):
-            self.success_label.setText(str(self.successful_files))
-        if hasattr(self, 'error_label'):
-            self.error_label.setText(str(self.failed_files))
-
-        # Обновляем скорость
-        if hasattr(self, 'speed_label') and self.start_time and self.processed_files > 0:
-            elapsed = datetime.now() - self.start_time
+        # ИСПРАВЛЕНО: Обновляем скорость при каждом завершенном файле
+        if start_time:
+            elapsed = datetime.now() - start_time
             elapsed_seconds = elapsed.total_seconds()
+
             if elapsed_seconds > 0:
                 files_per_minute = (self.processed_files / elapsed_seconds) * 60
-                self.speed_label.setText(f"{files_per_minute:.1f}/мин")
+                if self.speed_label:
+                    self.speed_label.setText(f"{files_per_minute:.1f}/мин")
+
+        logger.debug(f"File completed: success={success}, processed={self.processed_files}")
+
+    def update_stats(self):
+        """ИСПРАВЛЕНО: Обновление статистики"""
+        with QMutexLocker(self.mutex):
+            success_count = self.successful_files
+            error_count = self.failed_files
+
+        # Обновляем UI
+        if self.success_label:
+            self.success_label.setText(str(success_count))
+        if self.error_label:
+            self.error_label.setText(str(error_count))
+
+    def set_total_files(self, total: int):
+        """ИСПРАВЛЕНО: Установка общего количества файлов"""
+        with QMutexLocker(self.mutex):
+            self.total_files = total
+
+        self.files_label.setText(f"Файлов: 0 / {total}")
+        logger.debug(f"Total files set to: {total}")
 
     def set_completion_status(self, success: bool, message: str = ""):
-        """Устанавливает финальный статус"""
+        """ИСПРАВЛЕНО: Финальный статус"""
+        logger.info(f"Setting completion status: success={success}, message={message}")
+
         if success:
             self.status_label.setText("✅ Конвертация завершена!")
             self.status_label.setStyleSheet("""
@@ -342,58 +324,108 @@ class ProgressWidget(QWidget):
                     font-size: 14px;
                     color: #4CAF50;
                     font-weight: bold;
+                    margin: 4px;
                 }
             """)
             self.main_progress.setStyleSheet("""
                 QProgressBar {
                     border: 2px solid #4CAF50;
-                    border-radius: 12px;
-                    background: #f5f5f5;
+                    border-radius: 15px;
+                    background: #f8f9fa;
                     text-align: center;
                     font-weight: bold;
-                    font-size: 12px;
+                    font-size: 13px;
+                    color: #333;
                 }
                 QProgressBar::chunk {
                     background: #4CAF50;
-                    border-radius: 10px;
+                    border-radius: 13px;
                 }
             """)
         else:
-            self.status_label.setText("❌ Конвертация завершена с ошибками")
+            self.status_label.setText("❌ Конвертация с ошибками")
             self.status_label.setStyleSheet("""
                 QLabel {
                     font-size: 14px;
                     color: #f44336;
                     font-weight: bold;
+                    margin: 4px;
                 }
             """)
             self.main_progress.setStyleSheet("""
                 QProgressBar {
                     border: 2px solid #f44336;
-                    border-radius: 12px;
-                    background: #f5f5f5;
+                    border-radius: 15px;
+                    background: #f8f9fa;
                     text-align: center;
                     font-weight: bold;
-                    font-size: 12px;
+                    font-size: 13px;
+                    color: #333;
                 }
                 QProgressBar::chunk {
                     background: #f44336;
-                    border-radius: 10px;
+                    border-radius: 13px;
                 }
             """)
 
-        if message:
-            self.eta_label.setText(message)
-
     def set_error_status(self, error_message: str):
-        """Устанавливает статус ошибки"""
+        """ИСПРАВЛЕНО: Статус ошибки"""
+        logger.error(f"Setting error status: {error_message}")
+
         self.status_label.setText("💥 Критическая ошибка")
         self.status_label.setStyleSheet("""
             QLabel {
                 font-size: 14px;
                 color: #f44336;
                 font-weight: bold;
+                margin: 4px;
             }
         """)
-        self.eta_label.setText(f"Ошибка: {error_message}")
-        self.timer.stop()
+
+    def reset_styles(self):
+        """ИСПРАВЛЕНО: Сброс стилей"""
+        self.status_label.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                color: #333;
+                font-weight: bold;
+                margin: 4px;
+            }
+        """)
+
+        self.main_progress.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #e0e0e0;
+                border-radius: 15px;
+                background: #f8f9fa;
+                text-align: center;
+                font-weight: bold;
+                font-size: 13px;
+                color: #333;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #4CAF50, stop:1 #45a049);
+                border-radius: 13px;
+            }
+        """)
+
+    def get_current_stats(self) -> dict:
+        """ИСПРАВЛЕНО: Получение текущей статистики"""
+        with QMutexLocker(self.mutex):
+            return {
+                "successful_files": self.successful_files,
+                "failed_files": self.failed_files,
+                "processed_files": self.processed_files,
+                "current_file_index": self.current_file_index,
+                "total_files": self.total_files,
+                "start_time": self.start_time.isoformat() if self.start_time else None
+            }
+
+    def closeEvent(self, event):
+        """ИСПРАВЛЕНО: Закрытие виджета"""
+        if self.progress_animation and self.progress_animation.state() == QPropertyAnimation.Running:
+            self.progress_animation.stop()
+
+        event.accept()
+        logger.debug("Progress widget closed")

@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QLabel, QTextEdit, QFileDialog, QMessageBox,
     QGroupBox, QCheckBox, QSplitter, QFrame, QLineEdit
 )
-from PySide6.QtCore import Qt, QThread
+from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QFont
 from pathlib import Path
 from typing import List
@@ -15,17 +15,21 @@ logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
-    """Главное окно приложения с современным интерфейсом"""
+    """Главное окно приложения с исправленными соединениями сигналов"""
 
     def __init__(self):
         super().__init__()
         self.setup_window()
         self.setup_ui()
-        self.setup_connections()
         self.setup_worker()
+        self.setup_connections()
 
         # Список файлов для конвертации
         self.file_paths: List[Path] = []
+
+        # Состояние конвертации
+        self.is_converting = False
+        self.current_batch_results = []
 
         logger.info("Main window initialized")
 
@@ -293,26 +297,30 @@ class MainWindow(QMainWindow):
 
         return group
 
-    def setup_connections(self):
-        """Настраивает соединения сигналов"""
-        self.file_list.files_changed.connect(self.on_files_changed)
-
     def setup_worker(self):
-        """Настраивает worker для конвертации"""
+        """Настраивает worker для конвертации с правильными соединениями"""
         from workers.conversion_worker import BatchConversionWorker
 
+        # Создаем worker и поток
         self.worker = BatchConversionWorker()
         self.worker_thread = QThread()
         self.worker.moveToThread(self.worker_thread)
 
-        # Подключаем сигналы
-        self.worker.progress_changed.connect(self.progress_widget.update_progress)
+        # ИСПРАВЛЕНО: Правильное подключение сигналов прогресса
+        self.worker.progress_changed.connect(self.on_progress_update)
         self.worker.file_started.connect(self.on_file_started)
         self.worker.file_completed.connect(self.on_file_completed)
         self.worker.batch_completed.connect(self.on_batch_completed)
         self.worker.error_occurred.connect(self.on_conversion_error)
 
+        # Запускаем поток
         self.worker_thread.start()
+
+        logger.info("Worker thread started and signals connected")
+
+    def setup_connections(self):
+        """Настраивает дополнительные соединения сигналов"""
+        self.file_list.files_changed.connect(self.on_files_changed)
 
     def setup_status_bar(self):
         """Настраивает статус бар"""
@@ -323,6 +331,133 @@ class MainWindow(QMainWindow):
         version_label = QLabel("v2.0")
         version_label.setStyleSheet("color: #666; font-size: 10px;")
         self.statusBar().addPermanentWidget(version_label)
+
+    # ИСПРАВЛЕННЫЕ методы обработки сигналов
+
+    def on_progress_update(self, progress: int, message: str, current_file: int, total_files: int):
+        """ИСПРАВЛЕНО: Обработчик обновления прогресса"""
+        logger.debug(f"Progress update: {progress}% - {message} ({current_file}/{total_files})")
+
+        # Обновляем прогресс-виджет
+        self.progress_widget.update_progress(progress, message, current_file, total_files)
+
+        # Обновляем статус бар
+        if total_files > 0:
+            self.status_label.setText(f"Обработка файла {current_file}/{total_files}: {message}")
+        else:
+            self.status_label.setText(message)
+
+    def on_file_started(self, filepath: Path):
+        """ИСПРАВЛЕНО: Обработчик начала конвертации файла"""
+        logger.info(f"File started: {filepath.name}")
+        self.log_message(f"Начата обработка: {filepath.name}")
+
+        # Обновляем прогресс для конкретного файла
+        file_item = self.file_list.get_file_item(filepath)
+        if file_item:
+            file_item.set_conversion_progress(0, "Начинаем обработку...")
+
+    def on_file_completed(self, filepath: Path, result):
+        """ИСПРАВЛЕНО: Обработчик завершения конвертации файла"""
+        logger.info(f"File completed: {filepath.name}, success: {result.success}")
+
+        # Обновляем статистику в progress_widget
+        self.progress_widget.on_file_completed(result.success)
+
+        # Обновляем файл в списке
+        file_item = self.file_list.get_file_item(filepath)
+        if file_item:
+            if result.success:
+                stats = result.stats
+                exported_count = stats.get('exported', 0)
+                file_item.set_conversion_completed(True, f"Экспортировано: {exported_count}")
+            else:
+                error_msg = '; '.join(result.errors) if result.errors else "Неизвестная ошибка"
+                file_item.set_conversion_completed(False, error_msg)
+
+        # Логируем результат
+        if result.success:
+            self.log_message(f"✅ Завершено: {filepath.name}")
+
+            # Показываем результаты
+            stats = result.stats
+            output_info = "\n".join([f"  📄 {f.name}" for f in result.output_files])
+            result_text = f"""
+📁 {filepath.name}:
+{output_info}
+📊 Статистика:
+  • Экспортировано: {stats.get('exported', 0):,}
+  • Всего в SDLTM: {stats.get('total_in_sdltm', stats.get('total', 0)):,}
+  • Пропущено пустых: {stats.get('skipped_empty', 0):,}
+  • Пропущено дублей: {stats.get('skipped_duplicates', 0):,}
+  • Время: {stats.get('conversion_time', 0):.1f}с
+"""
+            self.results_text.append(result_text)
+        else:
+            error_msg = '; '.join(result.errors) if result.errors else "Неизвестная ошибка"
+            self.log_message(f"❌ Ошибка: {filepath.name} - {error_msg}")
+
+    def on_batch_completed(self, results: List):
+        """ИСПРАВЛЕНО: Обработчик завершения всей пакетной конвертации"""
+        successful = sum(1 for r in results if r.success)
+        total = len(results)
+
+        logger.info(f"Batch completed: {successful}/{total} successful")
+
+        # Обновляем UI
+        self.is_converting = False
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.add_files_btn.setEnabled(True)
+
+        # Финальный статус в progress_widget
+        if successful == total:
+            self.progress_widget.set_completion_status(True, f"Все файлы успешно конвертированы!")
+        else:
+            self.progress_widget.set_completion_status(False, f"Конвертировано {successful} из {total} файлов")
+
+        # Итоговое сообщение
+        self.log_message(f"🎉 Конвертация завершена: {successful}/{total} успешно")
+
+        # Показываем диалог с результатами
+        if successful > 0:
+            QMessageBox.information(
+                self,
+                "Конвертация завершена",
+                f"Успешно конвертировано: {successful} из {total} файлов\n\n"
+                f"Результаты смотрите в панели справа."
+            )
+        else:
+            QMessageBox.warning(
+                self,
+                "Конвертация не удалась",
+                f"Ни один файл не был успешно конвертирован.\n"
+                f"Проверьте логи для подробностей."
+            )
+
+    def on_conversion_error(self, error_msg: str):
+        """ИСПРАВЛЕНО: Обработчик критических ошибок конвертации"""
+        logger.error(f"Conversion error: {error_msg}")
+
+        # Возвращаем UI в обычный режим
+        self.is_converting = False
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.add_files_btn.setEnabled(True)
+
+        # Показываем ошибку в progress_widget
+        self.progress_widget.set_error_status(error_msg)
+
+        # Логируем ошибку
+        self.log_message(f"💥 Критическая ошибка: {error_msg}")
+
+        # Показываем диалог с ошибкой
+        QMessageBox.critical(
+            self,
+            "Ошибка конвертации",
+            f"Произошла критическая ошибка:\n\n{error_msg}\n\n"
+            f"Проверьте логи для подробностей."
+        )
 
     # Методы обработки событий
 
@@ -356,6 +491,8 @@ class MainWindow(QMainWindow):
         """Очищает список файлов"""
         self.file_paths.clear()
         self.file_list.clear()
+        self.progress_widget.reset()
+        self.results_text.clear()
         self.log_message("Список файлов очищен")
 
         # Сбрасываем автоопределенные языки
@@ -436,34 +573,40 @@ class MainWindow(QMainWindow):
 
     def on_files_changed(self, file_count: int):
         """Обработчик изменения списка файлов"""
-        self.start_btn.setEnabled(file_count > 0)
+        self.start_btn.setEnabled(file_count > 0 and not self.is_converting)
         self.status_label.setText(f"Файлов в очереди: {file_count}")
 
     def start_conversion(self):
-        """Запускает конвертацию"""
+        """ИСПРАВЛЕНО: Запускает конвертацию с правильными опциями"""
         if not self.file_paths:
             QMessageBox.warning(self, "Ошибка", "Нет файлов для конвертации")
             return
 
-        # Создаем опции конвертации
-        src_lang = self.src_lang_edit.text().strip() or "auto"
-        tgt_lang = self.tgt_lang_edit.text().strip() or "auto"
-
-        options = type('ConversionOptions', (), {
-            'export_tmx': self.tmx_cb.isChecked(),
-            'export_xlsx': self.xlsx_cb.isChecked(),
-            'export_json': self.json_cb.isChecked(),
-            'source_lang': src_lang,
-            'target_lang': tgt_lang,
-            'batch_size': 1000
-        })()
-
         # Проверяем, что выбран хотя бы один формат экспорта
-        if not (options.export_tmx or options.export_xlsx or options.export_json):
+        if not (self.tmx_cb.isChecked() or self.xlsx_cb.isChecked() or self.json_cb.isChecked()):
             QMessageBox.warning(self, "Ошибка", "Выберите хотя бы один формат экспорта")
             return
 
+        # Создаем правильные опции конвертации
+        from core.base import ConversionOptions
+
+        src_lang = self.src_lang_edit.text().strip() or "auto"
+        tgt_lang = self.tgt_lang_edit.text().strip() or "auto"
+
+        options = ConversionOptions(
+            export_tmx=self.tmx_cb.isChecked(),
+            export_xlsx=self.xlsx_cb.isChecked(),
+            export_json=self.json_cb.isChecked(),
+            source_lang=src_lang,
+            target_lang=tgt_lang,
+            batch_size=1000,
+            # ИСПРАВЛЕНО: Передаем колбэки для обновления UI
+            progress_callback=None,  # Не используем прямые колбэки, используем сигналы
+            should_stop_callback=lambda: not self.is_converting
+        )
+
         # Переключаем UI в режим конвертации
+        self.is_converting = True
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.add_files_btn.setEnabled(False)
@@ -471,69 +614,17 @@ class MainWindow(QMainWindow):
         # Очищаем предыдущие результаты
         self.results_text.clear()
         self.progress_widget.reset()
+        self.file_list.reset_all_status()
 
-        # Запускаем конвертацию
+        # ИСПРАВЛЕНО: Запускаем конвертацию через сигналы Qt
         self.worker.convert_batch(self.file_paths.copy(), options)
-        self.log_message(f"Начата конвертация {len(self.file_paths)} файлов")
+        self.log_message(f"🚀 Начата конвертация {len(self.file_paths)} файлов")
 
     def stop_conversion(self):
         """Останавливает конвертацию"""
+        self.is_converting = False
         self.worker.stop_batch()
-        self.log_message("Запрошена остановка конвертации...")
-
-    def on_file_started(self, filepath: Path):
-        """Обработчик начала конвертации файла"""
-        self.log_message(f"Начата обработка: {filepath.name}")
-
-    def on_file_completed(self, filepath: Path, result):
-        """Обработчик завершения конвертации файла"""
-        if result.success:
-            self.log_message(f"Завершено: {filepath.name}")
-
-            # Показываем результаты
-            stats = result.stats
-            output_info = "\n".join([f"  {f.name}" for f in result.output_files])
-            result_text = f"""
-{filepath.name}:
-{output_info}
-  Экспортировано: {stats.get('exported_to_tmx', stats.get('exported', 0))}
-  Всего в SDLTM: {stats.get('total_in_sdltm', stats.get('total', 0))}
-  Пропущено пустых: {stats.get('skipped_empty', 0)}
-  Пропущено дублей: {stats.get('skipped_duplicates', 0)}
-"""
-            self.results_text.append(result_text)
-        else:
-            self.log_message(f"Ошибка: {filepath.name} - {'; '.join(result.errors)}")
-
-    def on_batch_completed(self, results: List):
-        """Обработчик завершения всей пакетной конвертации"""
-        successful = sum(1 for r in results if r.success)
-        total = len(results)
-
-        self.log_message(f"Конвертация завершена: {successful}/{total} успешно")
-
-        # Возвращаем UI в обычный режим
-        self.start_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
-        self.add_files_btn.setEnabled(True)
-
-        # Показываем итоговую статистику
-        if successful > 0:
-            QMessageBox.information(
-                self,
-                "Конвертация завершена",
-                f"Успешно конвертировано: {successful} из {total} файлов"
-            )
-
-    def on_conversion_error(self, error_msg: str):
-        """Обработчик критических ошибок конвертации"""
-        self.log_message(f"Критическая ошибка: {error_msg}")
-        QMessageBox.critical(self, "Ошибка конвертации", error_msg)
-
-        # Возвращаем UI в обычный режим
-        self.start_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
-        self.add_files_btn.setEnabled(True)
+        self.log_message("🛑 Запрошена остановка конвертации...")
 
     def log_message(self, message: str):
         """Добавляет сообщение в лог"""
@@ -569,6 +660,10 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """Обработчик закрытия окна"""
+        # Останавливаем конвертацию если она идет
+        if self.is_converting:
+            self.stop_conversion()
+
         # Останавливаем worker thread
         if hasattr(self, 'worker_thread'):
             self.worker_thread.quit()
