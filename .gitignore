@@ -1,83 +1,52 @@
-# Byte-compiled / optimized / DLL files
+# Python cache
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
 *$py.class
 
-# C extensions
-*.so
-*.pyd
-*.pyo
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
-.env
+# Virtual env
 .venv/
 env/
-venv/
 ENV/
-env.bak/
-venv.bak/
+venv/
+*.egg-info/
+.eggs/
 
-# PyInstaller
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-pytest_cache/
-
-# IDEs / Editors
+# IDEs
 .vscode/
 .idea/
-*.sublime-project
-*.sublime-workspace
+*.sublime-*
 
-# OS files
+# Logs and temp
+*.log
+*.tmp
+*.bak
+*.swp
+session.json
+settings.json
+
+# System
 .DS_Store
 Thumbs.db
 
-# Jupyter
+# Build artifacts
+build/
+dist/
+*.spec
+
+# PyInstaller
+*.exe
+*.dll
+*.manifest
+
+# Tests cache
+.coverage
+.cache/
+pytest_cache/
+
+# Notebook
 .ipynb_checkpoints/
 
-# Logs
-*.log
-
-# Custom app files
-session.json
-settings.json
-*.tmp
-
-# Отчёты и временные файлы
-*.xlsx
-*.html
+# Excel/Word temp
 ~$*
-
