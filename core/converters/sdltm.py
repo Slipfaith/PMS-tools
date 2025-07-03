@@ -3,521 +3,731 @@
 import sqlite3
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Iterator, Tuple
+from typing import Iterator, Tuple, Dict, Set, Optional
 import logging
+import time
+from datetime import datetime
 
 from ..base import (
     FileConverter, ConversionResult, ConversionOptions, StreamingConverter,
-    ConversionError, ValidationError
+    ConversionError, ValidationError, ConversionStatus
 )
+from ..formats.tmx_format import TmxWriter
+from ..formats.xlsx_format import XlsxWriter
 
 logger = logging.getLogger(__name__)
 
 
 class SdltmConverter(StreamingConverter):
-    """Полный конвертер для SDLTM файлов с потоковой обработкой"""
+    """
+    Полный конвертер для SDLTM файлов с потоковой обработкой.
+
+    Поддерживает:
+    - Потоковую обработку больших файлов
+    - Автоопределение языков
+    - Экспорт в TMX, XLSX, JSON
+    - Дедупликацию сегментов
+    - Детальную статистику
+    - Обработку ошибок и восстановление
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.supported_exports = {'tmx', 'xlsx', 'json'}
+        self.language_cache = {}  # Кэш для определения языков
 
     def can_handle(self, filepath: Path) -> bool:
+        """Проверяет, может ли конвертер обработать файл"""
         return filepath.suffix.lower() == '.sdltm'
 
     def validate(self, filepath: Path) -> bool:
-        """Валидирует SDLTM файл"""
+        """
+        Валидирует SDLTM файл на корректность структуры
+
+        Args:
+            filepath: Путь к SDLTM файлу
+
+        Returns:
+            True если файл валиден
+
+        Raises:
+            ValidationError: При ошибках валидации
+        """
+        if not filepath.exists():
+            raise ValidationError(f"File not found: {filepath}")
+
+        if not filepath.is_file():
+            raise ValidationError(f"Not a file: {filepath}")
+
         try:
             with sqlite3.connect(str(filepath)) as conn:
                 cursor = conn.cursor()
 
-                # Проверяем наличие таблицы translation_units
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='translation_units'")
-                if not cursor.fetchone():
-                    raise ValidationError(f"No translation_units table in {filepath}")
+                # Проверяем, что это SQLite файл
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = {row[0] for row in cursor.fetchall()}
 
-                # Проверяем структуру
+                # Проверяем наличие обязательной таблицы
+                if 'translation_units' not in tables:
+                    raise ValidationError(f"Missing translation_units table in {filepath}")
+
+                # Проверяем структуру таблицы
                 cursor.execute("PRAGMA table_info(translation_units)")
                 columns = {row[1] for row in cursor.fetchall()}
-                required = {'source_segment', 'target_segment'}
 
-                if not required.issubset(columns):
-                    raise ValidationError(f"Missing columns {required - columns} in {filepath}")
+                required_columns = {'source_segment', 'target_segment'}
+                missing_columns = required_columns - columns
 
+                if missing_columns:
+                    raise ValidationError(f"Missing columns {missing_columns} in {filepath}")
+
+                # Проверяем, что есть данные
+                cursor.execute("SELECT COUNT(*) FROM translation_units")
+                count = cursor.fetchone()[0]
+
+                if count == 0:
+                    logger.warning(f"Empty SDLTM file: {filepath}")
+                    return True  # Пустой файл технически валиден
+
+                # Проверяем первые несколько записей на корректность XML
+                cursor.execute("SELECT source_segment, target_segment FROM translation_units LIMIT 10")
+
+                valid_segments = 0
+                for src_xml, tgt_xml in cursor.fetchall():
+                    try:
+                        self._parse_segment_xml(src_xml)
+                        self._parse_segment_xml(tgt_xml)
+                        valid_segments += 1
+                    except Exception as e:
+                        logger.debug(f"Invalid segment XML: {e}")
+                        continue
+
+                if valid_segments == 0:
+                    raise ValidationError(f"No valid segments found in {filepath}")
+
+                logger.info(f"SDLTM validation successful: {filepath} ({count} segments)")
                 return True
 
         except sqlite3.Error as e:
             raise ValidationError(f"Database error in {filepath}: {e}")
+        except Exception as e:
+            raise ValidationError(f"Unexpected error validating {filepath}: {e}")
 
     def get_progress_steps(self, filepath: Path) -> int:
-        """Получает общее количество сегментов для прогресса"""
+        """
+        Получает общее количество сегментов для расчета прогресса
+
+        Args:
+            filepath: Путь к SDLTM файлу
+
+        Returns:
+            Количество сегментов в файле
+        """
         try:
             with sqlite3.connect(str(filepath)) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT COUNT(*) FROM translation_units")
                 return cursor.fetchone()[0]
-        except sqlite3.Error:
+        except sqlite3.Error as e:
+            logger.error(f"Error getting progress steps for {filepath}: {e}")
             return 0
 
     def convert(self, filepath: Path, options: ConversionOptions) -> ConversionResult:
-        """Конвертирует SDLTM файл"""
+        """
+        Конвертирует SDLTM файл в указанные форматы
+
+        Args:
+            filepath: Путь к SDLTM файлу
+            options: Опции конвертации
+
+        Returns:
+            Результат конвертации
+        """
+        start_time = time.time()
+
         try:
-            # Валидация
+            # Валидация файла
+            self._update_progress(0, "Validating file...", options)
             if not self.validate(filepath):
-                return ConversionResult(False, [], {"error": "Validation failed"}, ["File validation failed"])
+                return ConversionResult(
+                    success=False,
+                    output_files=[],
+                    stats={"error": "Validation failed"},
+                    errors=["File validation failed"],
+                    status=ConversionStatus.FAILED
+                )
 
             # Получаем общее количество сегментов
             total_segments = self.get_progress_steps(filepath)
             if total_segments == 0:
-                return ConversionResult(False, [], {"total": 0}, ["No segments found"])
+                return ConversionResult(
+                    success=False,
+                    output_files=[],
+                    stats={"total": 0},
+                    errors=["No segments found"],
+                    status=ConversionStatus.FAILED
+                )
 
-            self._update_progress(5, f"Found {total_segments} segments", options)
+            self._update_progress(5, f"Found {total_segments:,} segments", options)
 
-            # Извлекаем сегменты потоково
-            segments = []
-            seen_pairs = set()
-            detected_src_lang = "unknown"
-            detected_tgt_lang = "unknown"
-
+            # Инициализируем статистику
             stats = {
-                "total": total_segments,
+                "total_in_sdltm": total_segments,
                 "processed": 0,
                 "exported": 0,
                 "skipped_empty": 0,
-                "skipped_tags": 0,
-                "skipped_duplicates": 0
+                "skipped_tags_only": 0,
+                "skipped_duplicates": 0,
+                "skipped_errors": 0,
+                "languages_detected": {},
+                "conversion_time": 0,
+                "memory_used_mb": 0
             }
 
-            for src_text, tgt_text, src_lang, tgt_lang in self.convert_streaming(filepath, options):
-                # Автоопределение языков из первых сегментов
-                if detected_src_lang == "unknown" and src_lang != "unknown":
-                    detected_src_lang = src_lang
-                    logger.info(f"Auto-detected source language: {src_lang}")
+            # Определяем языки
+            self._update_progress(10, "Detecting languages...", options)
+            detected_languages = self._detect_languages(filepath)
+            stats["languages_detected"] = detected_languages
 
-                if detected_tgt_lang == "unknown" and tgt_lang != "unknown":
-                    detected_tgt_lang = tgt_lang
-                    logger.info(f"Auto-detected target language: {tgt_lang}")
+            src_lang = self._resolve_language(options.source_lang, detected_languages.get('source', 'en-US'))
+            tgt_lang = self._resolve_language(options.target_lang, detected_languages.get('target', 'ru-RU'))
+
+            logger.info(f"Using languages: {src_lang} → {tgt_lang}")
+
+            # Потоковая обработка сегментов
+            self._update_progress(15, "Processing segments...", options)
+
+            segments = []
+            seen_pairs = set()
+
+            # Обрабатываем сегменты потоково
+            for segment_data in self.convert_streaming(filepath, options):
+                if self._should_stop(options):
+                    logger.info("Conversion stopped by user")
+                    return ConversionResult(
+                        success=False,
+                        output_files=[],
+                        stats=stats,
+                        errors=["Conversion cancelled by user"],
+                        status=ConversionStatus.CANCELLED
+                    )
+
+                src_text, tgt_text, seg_src_lang, seg_tgt_lang, skip_reason = segment_data
+                stats["processed"] += 1
+
+                # Обрабатываем пропуски
+                if skip_reason:
+                    if skip_reason == "empty":
+                        stats["skipped_empty"] += 1
+                    elif skip_reason == "tags_only":
+                        stats["skipped_tags_only"] += 1
+                    elif skip_reason == "error":
+                        stats["skipped_errors"] += 1
+                    continue
 
                 # Проверяем на дубликаты
-                pair_key = (src_text, tgt_text)
+                pair_key = (src_text.strip(), tgt_text.strip())
                 if pair_key in seen_pairs:
                     stats["skipped_duplicates"] += 1
                     continue
 
                 seen_pairs.add(pair_key)
-                segments.append((src_text, tgt_text, src_lang, tgt_lang))
+
+                # Используем детектированные языки или переопределенные
+                final_src_lang = seg_src_lang if seg_src_lang != "unknown" else src_lang
+                final_tgt_lang = seg_tgt_lang if seg_tgt_lang != "unknown" else tgt_lang
+
+                segments.append((src_text, tgt_text, final_src_lang, final_tgt_lang))
                 stats["exported"] += 1
 
             if not segments:
-                return ConversionResult(False, [], stats, ["No valid segments found"])
+                return ConversionResult(
+                    success=False,
+                    output_files=[],
+                    stats=stats,
+                    errors=["No valid segments found after processing"],
+                    status=ConversionStatus.FAILED
+                )
 
-            # Определяем языки (используем автоопределенные если они есть)
-            if detected_src_lang != "unknown":
-                src_lang = detected_src_lang
-            else:
-                src_lang = options.source_lang
-
-            if detected_tgt_lang != "unknown":
-                tgt_lang = detected_tgt_lang
-            else:
-                tgt_lang = options.target_lang
-
-            logger.info(f"Using languages: {src_lang} -> {tgt_lang}")
-
+            # Экспорт в различные форматы
             self._update_progress(80, "Writing output files...", options)
-
-            # Записываем файлы
             output_files = []
 
-            if options.export_tmx:
-                tmx_path = filepath.with_suffix('.tmx')
-                self._write_tmx(tmx_path, segments, src_lang, tgt_lang)
-                output_files.append(tmx_path)
-                logger.info(f"TMX created: {tmx_path}")
+            try:
+                # TMX экспорт
+                if options.export_tmx:
+                    tmx_path = filepath.with_suffix('.tmx')
+                    TmxWriter.write(tmx_path, segments, src_lang, tgt_lang)
+                    output_files.append(tmx_path)
+                    logger.info(f"TMX created: {tmx_path}")
 
-            if options.export_xlsx:
-                xlsx_path = filepath.with_suffix('.xlsx')
-                self._write_xlsx(xlsx_path, segments, src_lang, tgt_lang)
-                output_files.append(xlsx_path)
-                logger.info(f"XLSX created: {xlsx_path}")
+                # XLSX экспорт
+                if options.export_xlsx:
+                    xlsx_path = filepath.with_suffix('.xlsx')
+                    XlsxWriter.write(xlsx_path, segments, src_lang, tgt_lang)
+                    output_files.append(xlsx_path)
+                    logger.info(f"XLSX created: {xlsx_path}")
 
-            self._update_progress(100, f"Completed! Exported {stats['exported']} segments", options)
+                # JSON экспорт
+                if getattr(options, 'export_json', False):
+                    json_path = filepath.with_suffix('.json')
+                    self._write_json(json_path, segments, src_lang, tgt_lang)
+                    output_files.append(json_path)
+                    logger.info(f"JSON created: {json_path}")
+
+            except Exception as e:
+                logger.error(f"Error writing output files: {e}")
+                return ConversionResult(
+                    success=False,
+                    output_files=output_files,  # Частично созданные файлы
+                    stats=stats,
+                    errors=[f"Export error: {e}"],
+                    status=ConversionStatus.FAILED
+                )
+
+            # Финальная статистика
+            stats["conversion_time"] = time.time() - start_time
+            stats["memory_used_mb"] = self._get_memory_usage()
+
+            self._update_progress(100, f"Completed! Exported {stats['exported']:,} segments", options)
+
+            # Подробная статистика в лог
+            self._log_conversion_summary(filepath, stats, src_lang, tgt_lang)
 
             return ConversionResult(
                 success=True,
                 output_files=output_files,
-                stats=stats
+                stats=stats,
+                status=ConversionStatus.COMPLETED
             )
 
         except Exception as e:
-            logger.exception(f"Error converting {filepath}")
+            logger.exception(f"Critical error converting {filepath}")
             return ConversionResult(
                 success=False,
                 output_files=[],
-                stats={"error": str(e)},
-                errors=[str(e)]
+                stats={"error": str(e), "conversion_time": time.time() - start_time},
+                errors=[str(e)],
+                status=ConversionStatus.FAILED
             )
 
-    def convert_streaming(self, filepath: Path, options: ConversionOptions) -> Iterator[Tuple[str, str, str, str]]:
-        """Потоковая обработка SDLTM с батчами (обычная версия)"""
-        with sqlite3.connect(str(filepath)) as conn:
-            cursor = conn.cursor()
+    def convert_streaming(self, filepath: Path, options: ConversionOptions) -> Iterator[
+        Tuple[str, str, str, str, Optional[str]]]:
+        """
+        Потоковая обработка SDLTM файла с батчами
 
-            # Получаем общее количество для прогресса
-            cursor.execute("SELECT COUNT(*) FROM translation_units")
-            total = cursor.fetchone()[0]
+        Args:
+            filepath: Путь к SDLTM файлу
+            options: Опции конвертации
 
-            processed = 0
-            batch_size = options.batch_size
-            offset = 0
+        Yields:
+            Tuple[src_text, tgt_text, src_lang, tgt_lang, skip_reason]
+            skip_reason: None если сегмент валиден, иначе причина пропуска
+        """
+        try:
+            with sqlite3.connect(str(filepath)) as conn:
+                # Настраиваем соединение для лучшей производительности
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+                conn.execute("PRAGMA cache_size=10000")
+                conn.execute("PRAGMA temp_store=MEMORY")
 
-            while True:
-                # Проверяем на остановку
-                if self._should_stop(options):
-                    logger.info("SDLTM conversion stopped by user")
-                    break
+                cursor = conn.cursor()
 
-                # Читаем батч
-                cursor.execute(
-                    "SELECT source_segment, target_segment FROM translation_units LIMIT ? OFFSET ?",
-                    (batch_size, offset)
-                )
+                # Получаем общее количество для прогресса
+                cursor.execute("SELECT COUNT(*) FROM translation_units")
+                total = cursor.fetchone()[0]
 
-                batch = cursor.fetchall()
-                if not batch:
-                    break
+                processed = 0
+                batch_size = getattr(options, 'batch_size', 1000)
+                offset = 0
 
-                # Обрабатываем батч
-                for src_xml, tgt_xml in batch:
-                    processed += 1
+                while True:
+                    # Проверяем на остановку
+                    if self._should_stop(options):
+                        logger.info("SDLTM streaming conversion stopped by user")
+                        break
 
+                    # Читаем батч с обработкой ошибок
                     try:
-                        src_text, src_lang = self._parse_segment_xml(src_xml)
-                        tgt_text, tgt_lang = self._parse_segment_xml(tgt_xml)
+                        cursor.execute(
+                            "SELECT source_segment, target_segment FROM translation_units LIMIT ? OFFSET ?",
+                            (batch_size, offset)
+                        )
+                        batch = cursor.fetchall()
 
-                        # Пропускаем пустые
-                        if not src_text.strip() or not tgt_text.strip():
+                        if not batch:
+                            break
+
+                    except sqlite3.Error as e:
+                        logger.error(f"Database error at offset {offset}: {e}")
+                        break
+
+                    # Обрабатываем батч
+                    for src_xml, tgt_xml in batch:
+                        processed += 1
+
+                        try:
+                            # Парсим сегменты
+                            src_text, src_lang = self._parse_segment_xml(src_xml)
+                            tgt_text, tgt_lang = self._parse_segment_xml(tgt_xml)
+
+                            # Проверяем на пустые сегменты
+                            if not src_text.strip() or not tgt_text.strip():
+                                yield (src_text, tgt_text, src_lang, tgt_lang, "empty")
+                                continue
+
+                            # Проверяем сегменты только с тегами
+                            if self._is_tags_only(src_xml) or self._is_tags_only(tgt_xml):
+                                yield (src_text, tgt_text, src_lang, tgt_lang, "tags_only")
+                                continue
+
+                            # Валидный сегмент
+                            yield (src_text, tgt_text, src_lang, tgt_lang, None)
+
+                        except Exception as e:
+                            logger.debug(f"Error parsing segment {processed}: {e}")
+                            yield ("", "", "unknown", "unknown", "error")
                             continue
 
-                        # Пропускаем сегменты только с тегами
-                        if self._is_tags_only(src_xml) or self._is_tags_only(tgt_xml):
-                            continue
+                    # Обновляем прогресс
+                    if total > 0:
+                        progress = 15 + int((processed / total) * 60)  # 15-75% диапазон
+                        self._update_progress(progress, f"Processed {processed:,}/{total:,} segments", options)
 
-                        yield (src_text, tgt_text, src_lang, tgt_lang)
+                    offset += batch_size
 
-                    except Exception as e:
-                        logger.debug(f"Error parsing segment: {e}")
-                        continue
-
-                # Обновляем прогресс
-                progress = min(75, int((processed / total) * 75))
-                self._update_progress(progress, f"Processed {processed}/{total}", options)
-
-                offset += batch_size
+        except Exception as e:
+            logger.error(f"Critical error in streaming conversion: {e}")
+            raise ConversionError(f"Streaming conversion failed: {e}", filepath)
 
     def _parse_segment_xml(self, xml_segment: str) -> Tuple[str, str]:
-        """Парсит XML сегмент SDLTM"""
+        """
+        Парсит XML сегмент SDLTM с улучшенной обработкой ошибок
+
+        Args:
+            xml_segment: XML строка сегмента
+
+        Returns:
+            Tuple[text, language_code]
+        """
+        if not xml_segment or not xml_segment.strip():
+            return "", "unknown"
+
         try:
+            # Кэшируем результаты парсинга для повышения производительности
+            if xml_segment in self.language_cache:
+                return self.language_cache[xml_segment]
+
             root = ET.fromstring(xml_segment)
 
-            # Извлекаем текст
+            # Извлекаем текст различными способами
+            text = ""
+
+            # Основной способ - Text/Value
             text_elem = root.find(".//Text/Value")
-            text = text_elem.text if text_elem is not None and text_elem.text else ""
+            if text_elem is not None and text_elem.text:
+                text = text_elem.text
+            else:
+                # Альтернативные способы
+                for xpath in [".//Value", ".//Text", ".//Content"]:
+                    elem = root.find(xpath)
+                    if elem is not None and elem.text:
+                        text = elem.text
+                        break
 
             # Извлекаем язык
-            lang_elem = root.find(".//CultureName")
-            lang = lang_elem.text if lang_elem is not None and lang_elem.text else "unknown"
+            lang = "unknown"
+            for xpath in [".//CultureName", ".//Culture", ".//Language", ".//Lang"]:
+                lang_elem = root.find(xpath)
+                if lang_elem is not None and lang_elem.text:
+                    lang = self._normalize_language(lang_elem.text)
+                    break
 
-            # Нормализуем язык
-            lang = self._normalize_language(lang)
+            result = (text.strip(), lang)
 
-            return text.strip(), lang
+            # Кэшируем результат
+            if len(self.language_cache) < 1000:  # Ограничиваем размер кэша
+                self.language_cache[xml_segment] = result
 
-        except ET.ParseError:
+            return result
+
+        except ET.ParseError as e:
+            logger.debug(f"XML parsing error: {e}")
             return "", "unknown"
-        except Exception:
-            return "", "unknown"
-        """Потоковая обработка SDLTM с батчами"""
-        with sqlite3.connect(str(filepath)) as conn:
-            cursor = conn.cursor()
-
-            # Получаем общее количество для прогресса
-            cursor.execute("SELECT COUNT(*) FROM translation_units")
-            total = cursor.fetchone()[0]
-
-            processed = 0
-            batch_size = options.batch_size
-            offset = 0
-
-            while True:
-                # Проверяем на остановку
-                if self._should_stop(options):
-                    logger.info("SDLTM conversion stopped by user")
-                    break
-
-                # Читаем батч
-                cursor.execute(
-                    "SELECT source_segment, target_segment FROM translation_units LIMIT ? OFFSET ?",
-                    (batch_size, offset)
-                )
-
-                batch = cursor.fetchall()
-                if not batch:
-                    break
-
-                # Обрабатываем батч
-                for src_xml, tgt_xml in batch:
-                    processed += 1
-
-                    try:
-                        src_text, src_lang = self._parse_segment_xml(src_xml)
-                        tgt_text, tgt_lang = self._parse_segment_xml(tgt_xml)
-
-                        # Пропускаем пустые
-                        if not src_text.strip() or not tgt_text.strip():
-                            continue
-
-                        # Пропускаем сегменты только с тегами
-                        if self._is_tags_only(src_xml) or self._is_tags_only(tgt_xml):
-                            continue
-
-                        yield (src_text, tgt_text, src_lang, tgt_lang)
-
-                    except Exception as e:
-                        logger.debug(f"Error parsing segment: {e}")
-                        continue
-
-                # Обновляем прогресс
-                progress = min(75, int((processed / total) * 75))
-                self._update_progress(progress, f"Processed {processed}/{total}", options)
-
-                offset += batch_size
-
-    def convert_streaming_detailed(self, filepath: Path, options: ConversionOptions):
-        """Потоковая обработка SDLTM с детальным анализом пропусков"""
-        with sqlite3.connect(str(filepath)) as conn:
-            cursor = conn.cursor()
-
-            # Получаем общее количество для прогресса
-            cursor.execute("SELECT COUNT(*) FROM translation_units")
-            total = cursor.fetchone()[0]
-
-            processed = 0
-            batch_size = options.batch_size
-            offset = 0
-
-            while True:
-                # Проверяем на остановку
-                if self._should_stop(options):
-                    logger.info("SDLTM conversion stopped by user")
-                    break
-
-                # Читаем батч
-                cursor.execute(
-                    "SELECT source_segment, target_segment FROM translation_units LIMIT ? OFFSET ?",
-                    (batch_size, offset)
-                )
-
-                batch = cursor.fetchall()
-                if not batch:
-                    break
-
-                # Обрабатываем батч
-                for src_xml, tgt_xml in batch:
-                    processed += 1
-
-                    try:
-                        src_text, src_lang = self._parse_segment_xml(src_xml)
-                        tgt_text, tgt_lang = self._parse_segment_xml(tgt_xml)
-
-                        # Проверяем причины пропуска
-                        skip_reason = None
-
-                        # Пропускаем пустые (и source, и target пустые)
-                        if not src_text.strip() and not tgt_text.strip():
-                            skip_reason = "empty"
-                        # Пропускаем, если один из сегментов пустой
-                        elif not src_text.strip() or not tgt_text.strip():
-                            skip_reason = "empty"
-                        # Пропускаем сегменты только с тегами
-                        elif self._is_tags_only(src_xml) and self._is_tags_only(tgt_xml):
-                            skip_reason = "tags_only"
-
-                        yield (src_text, tgt_text, src_lang, tgt_lang, skip_reason)
-
-                    except Exception as e:
-                        logger.debug(f"Error parsing segment: {e}")
-                        yield ("", "", "unknown", "unknown", "error")
-                        continue
-
-                # Обновляем прогресс
-                progress = min(75, int((processed / total) * 75))
-                self._update_progress(progress, f"Processed {processed}/{total}", options)
-
-                offset += batch_size
-
-    def _log_conversion_details(self, filepath: Path, stats: dict, skipped_details: dict, src_lang: str, tgt_lang: str):
-        """Логирует подробную статистику конвертации"""
-
-        # Основная статистика
-        logger.info(f"=== Conversion Summary for {filepath.name} ===")
-        logger.info(f"Languages: {src_lang} -> {tgt_lang}")
-        logger.info(f"Total segments in SDLTM: {stats['total_in_sdltm']}")
-        logger.info(f"Successfully exported to TMX: {stats['exported_to_tmx']}")
-        logger.info(f"Skipped empty segments: {stats['skipped_empty']}")
-        logger.info(f"Skipped tag-only segments: {stats['skipped_tags_only']}")
-        logger.info(f"Skipped duplicate segments: {stats['skipped_duplicates']}")
-
-        # Детальная информация о пропущенных сегментах (первые 5 из каждой категории)
-        if skipped_details["empty"]:
-            logger.info(f"--- Empty segments (showing first 5 of {len(skipped_details['empty'])}) ---")
-            for i, (src, tgt) in enumerate(skipped_details["empty"][:5]):
-                logger.info(f"  Empty #{i + 1}: '{src}' | '{tgt}'")
-
-        if skipped_details["tags_only"]:
-            logger.info(f"--- Tag-only segments (showing first 5 of {len(skipped_details['tags_only'])}) ---")
-            for i, (src, tgt) in enumerate(skipped_details["tags_only"][:5]):
-                logger.info(f"  Tags #{i + 1}: '{src}' | '{tgt}'")
-
-        if skipped_details["duplicates"]:
-            logger.info(f"--- Duplicate segments (showing first 5 of {len(skipped_details['duplicates'])}) ---")
-            for i, (src, tgt) in enumerate(skipped_details["duplicates"][:5]):
-                logger.info(f"  Duplicate #{i + 1}: '{src}' | '{tgt}'")
-
-        logger.info("=== End Conversion Summary ===")
-
-    def convert_streaming(self, filepath: Path, options: ConversionOptions) -> Iterator[Tuple[str, str, str, str]]:
-
-    def _parse_segment_xml(self, xml_segment: str) -> Tuple[str, str]:
-        """Парсит XML сегмент SDLTM"""
-        try:
-            root = ET.fromstring(xml_segment)
-
-            # Извлекаем текст
-            text_elem = root.find(".//Text/Value")
-            text = text_elem.text if text_elem is not None and text_elem.text else ""
-
-            # Извлекаем язык
-            lang_elem = root.find(".//CultureName")
-            lang = lang_elem.text if lang_elem is not None and lang_elem.text else "unknown"
-
-            # Нормализуем язык
-            lang = self._normalize_language(lang)
-
-            return text.strip(), lang
-
-        except ET.ParseError:
-            return "", "unknown"
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Unexpected error parsing XML: {e}")
             return "", "unknown"
 
     def _is_tags_only(self, xml_segment: str) -> bool:
-        """Проверяет, состоит ли сегмент только из тегов"""
+        """
+        Проверяет, состоит ли сегмент только из тегов без текста
+
+        Args:
+            xml_segment: XML строка сегмента
+
+        Returns:
+            True если сегмент содержит только теги
+        """
+        if not xml_segment or not xml_segment.strip():
+            return True
+
         try:
             root = ET.fromstring(xml_segment)
-            text_elem = root.find(".//Text/Value")
 
-            if text_elem is None or not text_elem.text:
+            # Проверяем наличие текста
+            text_elem = root.find(".//Text/Value")
+            if text_elem is None:
                 return True
 
-            # Если есть теги, но нет текста
-            has_tags = root.find(".//Tag") is not None
-            has_text = bool(text_elem.text.strip())
+            text_content = text_elem.text or ""
+            text_content = text_content.strip()
 
-            return has_tags and not has_text
+            if not text_content:
+                return True
 
-        except:
+            # Проверяем наличие тегов
+            tags = root.findall(".//Tag")
+
+            # Если есть теги, но нет значимого текста
+            if tags and len(text_content) < 3:
+                return True
+
+            # Проверяем, что текст не состоит только из пробелов и символов
+            if text_content and not any(c.isalnum() for c in text_content):
+                return True
+
             return False
 
+        except ET.ParseError:
+            return True
+        except Exception:
+            return True
+
+    def _detect_languages(self, filepath: Path) -> Dict[str, str]:
+        """
+        Автоматически определяет языки из SDLTM файла
+
+        Args:
+            filepath: Путь к SDLTM файлу
+
+        Returns:
+            Dict с ключами 'source' и 'target'
+        """
+        detected = {"source": "unknown", "target": "unknown"}
+
+        try:
+            with sqlite3.connect(str(filepath)) as conn:
+                cursor = conn.cursor()
+
+                # Анализируем первые 50 сегментов для определения языков
+                cursor.execute("SELECT source_segment, target_segment FROM translation_units LIMIT 50")
+
+                src_langs = {}
+                tgt_langs = {}
+
+                for src_xml, tgt_xml in cursor.fetchall():
+                    try:
+                        _, src_lang = self._parse_segment_xml(src_xml)
+                        _, tgt_lang = self._parse_segment_xml(tgt_xml)
+
+                        if src_lang != "unknown":
+                            src_langs[src_lang] = src_langs.get(src_lang, 0) + 1
+
+                        if tgt_lang != "unknown":
+                            tgt_langs[tgt_lang] = tgt_langs.get(tgt_lang, 0) + 1
+
+                    except Exception:
+                        continue
+
+                # Выбираем наиболее частые языки
+                if src_langs:
+                    detected["source"] = max(src_langs, key=src_langs.get)
+                    logger.info(f"Auto-detected source language: {detected['source']}")
+
+                if tgt_langs:
+                    detected["target"] = max(tgt_langs, key=tgt_langs.get)
+                    logger.info(f"Auto-detected target language: {detected['target']}")
+
+        except Exception as e:
+            logger.warning(f"Error detecting languages: {e}")
+
+        return detected
+
+    def _resolve_language(self, option_lang: str, detected_lang: str) -> str:
+        """
+        Определяет финальный язык из опций или автоопределения
+
+        Args:
+            option_lang: Язык из опций
+            detected_lang: Автоопределенный язык
+
+        Returns:
+            Финальный код языка
+        """
+        if option_lang and option_lang.lower() not in ["auto", "unknown", ""]:
+            return self._normalize_language(option_lang)
+        return detected_lang
+
     def _normalize_language(self, lang_code: str) -> str:
-        """Нормализует языковой код"""
-        if not lang_code or lang_code == "unknown":
+        """
+        Нормализует языковой код к стандартному формату
+
+        Args:
+            lang_code: Исходный код языка
+
+        Returns:
+            Нормализованный код языка
+        """
+        if not lang_code or lang_code.lower() in ["unknown", ""]:
             return "unknown"
 
         # Стандартные замены
         lang_map = {
-            "en": "en-US", "de": "de-DE", "fr": "fr-FR", "it": "it-IT",
-            "es": "es-ES", "pt": "pt-PT", "ru": "ru-RU", "ja": "ja-JP",
-            "ko": "ko-KR", "zh": "zh-CN", "pl": "pl-PL", "tr": "tr-TR"
+            "en": "en-US", "english": "en-US",
+            "de": "de-DE", "german": "de-DE", "deutsch": "de-DE",
+            "fr": "fr-FR", "french": "fr-FR", "français": "fr-FR",
+            "it": "it-IT", "italian": "it-IT", "italiano": "it-IT",
+            "es": "es-ES", "spanish": "es-ES", "español": "es-ES",
+            "pt": "pt-PT", "portuguese": "pt-PT", "português": "pt-PT",
+            "ru": "ru-RU", "russian": "ru-RU", "русский": "ru-RU",
+            "ja": "ja-JP", "japanese": "ja-JP", "日本語": "ja-JP",
+            "ko": "ko-KR", "korean": "ko-KR", "한국어": "ko-KR",
+            "zh": "zh-CN", "chinese": "zh-CN", "中文": "zh-CN",
+            "pl": "pl-PL", "polish": "pl-PL", "polski": "pl-PL",
+            "tr": "tr-TR", "turkish": "tr-TR", "türkçe": "tr-TR",
+            "nl": "nl-NL", "dutch": "nl-NL", "nederlands": "nl-NL",
+            "sv": "sv-SE", "swedish": "sv-SE", "svenska": "sv-SE",
+            "da": "da-DK", "danish": "da-DK", "dansk": "da-DK",
+            "no": "no-NO", "norwegian": "no-NO", "norsk": "no-NO",
+            "fi": "fi-FI", "finnish": "fi-FI", "suomi": "fi-FI"
         }
 
-        code = lang_code.lower().replace("_", "-")
+        code = lang_code.lower().strip().replace("_", "-")
 
-        # Если уже полный код
+        # Если уже полный код (например, en-US)
         if "-" in code and len(code) == 5:
             return code
 
-        # Добавляем регион по умолчанию
-        return lang_map.get(code, f"{code}-XX")
+        # Ищем в карте замен
+        if code in lang_map:
+            return lang_map[code]
 
-    def _write_tmx(self, filepath: Path, segments, src_lang: str, tgt_lang: str):
-        """Записывает TMX файл"""
-        import xml.etree.ElementTree as ET
+        # Если это двухбуквенный код, добавляем регион по умолчанию
+        if len(code) == 2 and code.isalpha():
+            return lang_map.get(code, f"{code}-XX")
 
-        # Создаем TMX структуру
-        tmx = ET.Element("tmx", version="1.4")
+        # Если ничего не подошло, возвращаем как есть
+        return lang_code
 
-        # Заголовок
-        header = ET.SubElement(tmx, "header", {
-            "creationtool": "ConverterPro",
-            "creationtoolversion": "2.0",
-            "segtype": "sentence",
-            "adminlang": "en-US",
-            "srclang": src_lang,
-            "datatype": "PlainText"
-        })
+    def _write_json(self, filepath: Path, segments, src_lang: str, tgt_lang: str):
+        """
+        Записывает JSON файл с сегментами
 
-        # Тело
-        body = ET.SubElement(tmx, "body")
+        Args:
+            filepath: Путь к JSON файлу
+            segments: Список сегментов
+            src_lang: Исходный язык
+            tgt_lang: Целевой язык
+        """
+        import json
 
-        for src_text, tgt_text, seg_src_lang, seg_tgt_lang in segments:
-            # Используем языки из сегмента или дефолтные
-            actual_src = seg_src_lang if seg_src_lang != "unknown" else src_lang
-            actual_tgt = seg_tgt_lang if seg_tgt_lang != "unknown" else tgt_lang
+        data = {
+            "metadata": {
+                "source_language": src_lang,
+                "target_language": tgt_lang,
+                "created_at": datetime.now().isoformat(),
+                "total_segments": len(segments),
+                "created_by": "Converter Pro v2.0"
+            },
+            "segments": []
+        }
 
-            # Создаем TU
-            tu = ET.SubElement(body, "tu")
+        for i, (src_text, tgt_text, seg_src_lang, seg_tgt_lang) in enumerate(segments):
+            data["segments"].append({
+                "id": i + 1,
+                "source": {
+                    "text": src_text,
+                    "language": seg_src_lang
+                },
+                "target": {
+                    "text": tgt_text,
+                    "language": seg_tgt_lang
+                }
+            })
 
-            # Source TUV
-            src_tuv = ET.SubElement(tu, "tuv", {"xml:lang": actual_src})
-            src_seg = ET.SubElement(src_tuv, "seg")
-            src_seg.text = src_text
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
-            # Target TUV
-            tgt_tuv = ET.SubElement(tu, "tuv", {"xml:lang": actual_tgt})
-            tgt_seg = ET.SubElement(tgt_tuv, "seg")
-            tgt_seg.text = tgt_text
+    def _get_memory_usage(self) -> float:
+        """
+        Получает текущее использование памяти в МБ
 
-        # Форматируем с отступами
-        self._indent_xml(tmx)
+        Returns:
+            Использование памяти в МБ
+        """
+        try:
+            import psutil
+            process = psutil.Process()
+            return process.memory_info().rss / 1024 / 1024
+        except ImportError:
+            return 0.0
+        except Exception:
+            return 0.0
 
-        # Записываем
-        tree = ET.ElementTree(tmx)
-        tree.write(str(filepath), encoding="utf-8", xml_declaration=True)
+    def _log_conversion_summary(self, filepath: Path, stats: Dict, src_lang: str, tgt_lang: str):
+        """
+        Логирует подробную статистику конвертации
 
-    def _write_xlsx(self, filepath: Path, segments, src_lang: str, tgt_lang: str):
-        """Записывает XLSX файл"""
-        from openpyxl import Workbook
+        Args:
+            filepath: Путь к файлу
+            stats: Статистика конвертации
+            src_lang: Исходный язык
+            tgt_lang: Целевой язык
+        """
+        logger.info("=" * 60)
+        logger.info(f"CONVERSION SUMMARY: {filepath.name}")
+        logger.info("=" * 60)
+        logger.info(f"Languages: {src_lang} → {tgt_lang}")
+        logger.info(f"Total segments in SDLTM: {stats['total_in_sdltm']:,}")
+        logger.info(f"Segments processed: {stats['processed']:,}")
+        logger.info(f"Segments exported: {stats['exported']:,}")
+        logger.info(f"Conversion time: {stats['conversion_time']:.2f} seconds")
+        logger.info(f"Memory used: {stats['memory_used_mb']:.1f} MB")
+        logger.info("")
+        logger.info("SKIPPED SEGMENTS:")
+        logger.info(f"  Empty segments: {stats['skipped_empty']:,}")
+        logger.info(f"  Tag-only segments: {stats['skipped_tags_only']:,}")
+        logger.info(f"  Duplicate segments: {stats['skipped_duplicates']:,}")
+        logger.info(f"  Error segments: {stats['skipped_errors']:,}")
+        logger.info("")
+        logger.info("DETECTED LANGUAGES:")
+        for lang_type, lang_code in stats['languages_detected'].items():
+            logger.info(f"  {lang_type.capitalize()}: {lang_code}")
+        logger.info("=" * 60)
 
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Translation Memory"
+    def get_supported_formats(self) -> Set[str]:
+        """
+        Возвращает поддерживаемые форматы экспорта
 
-        # Заголовки
-        ws.append([f"Source ({src_lang})", f"Target ({tgt_lang})"])
+        Returns:
+            Множество поддерживаемых форматов
+        """
+        return self.supported_exports.copy()
 
-        # Данные
-        for src_text, tgt_text, seg_src_lang, seg_tgt_lang in segments:
-            ws.append([src_text, tgt_text])
+    def estimate_conversion_time(self, filepath: Path) -> float:
+        """
+        Оценивает время конвертации на основе размера файла
 
-        wb.save(str(filepath))
+        Args:
+            filepath: Путь к файлу
 
-    @staticmethod
-    def _indent_xml(elem, level=0):
-        """Добавляет отступы для читаемости"""
-        i = "\n" + level * "  "
-        if len(elem):
-            if not elem.text or not elem.text.strip():
-                elem.text = i + "  "
-            for child in elem:
-                SdltmConverter._indent_xml(child, level + 1)
-            if not elem.tail or not elem.tail.strip():
-                elem.tail = i
-        else:
-            if level and (not elem.tail or not elem.tail.strip()):
-                elem.tail = i
+        Returns:
+            Примерное время в секундах
+        """
+        try:
+            file_size_mb = filepath.stat().st_size / (1024 * 1024)
+            # Примерная оценка: 1 МБ = 5 секунд
+            return file_size_mb * 5
+        except Exception:
+            return 0.0
