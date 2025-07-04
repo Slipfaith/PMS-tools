@@ -1,4 +1,4 @@
-# services/file_service.py - НОВЫЙ ФАЙЛ
+# services/file_service.py - ОБНОВЛЕННАЯ ВЕРСИЯ
 
 import sqlite3
 import xml.etree.ElementTree as ET
@@ -152,15 +152,30 @@ class FileService:
             return "Недоступно"
 
     def _get_excel_info(self, filepath: Path) -> str:
-        """Получает информацию об Excel файле"""
+        """ОБНОВЛЕНО: Получает информацию об Excel файле"""
         try:
             import openpyxl
             wb = openpyxl.load_workbook(str(filepath), read_only=True)
-            sheets = len(wb.sheetnames)
+
+            sheets_count = len(wb.sheetnames)
+
+            # Подсчитываем примерное количество строк
+            total_rows = 0
+            for sheet_name in wb.sheetnames:
+                sheet = wb[sheet_name]
+                if sheet.max_row > 1:  # Исключаем пустые листы
+                    total_rows += sheet.max_row - 1  # Минус заголовок
+
             wb.close()
-            return f"{sheets} лист(ов)"
-        except Exception:
-            return "Недоступно"
+
+            if total_rows > 0:
+                return f"{sheets_count} листов, ~{total_rows:,} строк"
+            else:
+                return f"{sheets_count} листов"
+
+        except Exception as e:
+            logger.warning(f"Error analyzing Excel file {filepath}: {e}")
+            return "Требует настройки"
 
     def _normalize_language(self, lang_code: str) -> str:
         """Нормализует языковой код"""

@@ -1,4 +1,4 @@
-# controller.py - НОВЫЙ ФАЙЛ
+# controller.py - ОБНОВЛЕННАЯ ВЕРСИЯ
 
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -131,6 +131,172 @@ class MainController:
 
         return True, "OK"
 
+    # ===========================================
+    # НОВЫЕ МЕТОДЫ ДЛЯ РАБОТЫ С EXCEL
+    # ===========================================
+
+    def is_excel_file(self, filepath: Path) -> bool:
+        """Проверяет, является ли файл Excel"""
+        return filepath.suffix.lower() in ['.xlsx', '.xls']
+
+    def analyze_excel_file(self, filepath: Path):
+        """Анализирует Excel файл для настройки конвертации"""
+        try:
+            from core.converters.excel_converter import ExcelConverter
+
+            converter = ExcelConverter()
+
+            # Сначала валидируем файл
+            if not converter.validate(filepath):
+                raise ValueError("Excel file validation failed")
+
+            # Анализируем структуру
+            analysis = converter.analyze_excel_structure(filepath)
+
+            logger.info(f"Excel analysis completed: {filepath.name}, {len(analysis.sheets)} sheets")
+            return analysis
+
+        except Exception as e:
+            logger.error(f"Error analyzing Excel file {filepath}: {e}")
+            raise
+
+    def show_excel_config_dialog(self, filepath: Path, parent_widget):
+        """Показывает диалог настройки Excel конвертации"""
+        try:
+            # Анализируем Excel файл
+            analysis = self.analyze_excel_file(filepath)
+
+            # Показываем диалог настройки
+            from gui.dialogs.excel_config_dialog import ExcelConfigDialog
+            from PySide6.QtWidgets import QDialog
+
+            dialog = ExcelConfigDialog(analysis, parent_widget)
+
+            if dialog.exec() == QDialog.Accepted:
+                settings = dialog.get_settings()
+                logger.info(f"Excel conversion settings accepted for {filepath.name}")
+                return settings
+            else:
+                logger.info(f"Excel conversion cancelled for {filepath.name}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error in Excel config dialog for {filepath}: {e}")
+            # Показываем ошибку пользователю
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                parent_widget,
+                "Ошибка анализа Excel",
+                f"Не удалось проанализировать Excel файл:\n\n{e}\n\n"
+                f"Убедитесь, что файл не поврежден и содержит данные."
+            )
+            return None
+
+    def convert_excel_file(self, filepath: Path, settings, options):
+        """Конвертирует Excel файл с заданными настройками"""
+        try:
+            from core.converters.excel_converter import ExcelConverter
+
+            converter = ExcelConverter()
+            result = converter.convert_excel_to_tmx(filepath, settings, options)
+
+            logger.info(f"Excel conversion result: success={result.success}, "
+                        f"output_files={len(result.output_files)}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error converting Excel file {filepath}: {e}")
+            raise
+
+    def prepare_excel_conversion_options(self, settings) -> 'ConversionOptions':
+        """Создает опции конвертации для Excel"""
+        from core.base import ConversionOptions
+
+        return ConversionOptions(
+            export_tmx=True,  # Excel всегда конвертируется в TMX
+            export_xlsx=False,
+            export_json=False,
+            source_lang=settings.source_language,
+            target_lang=settings.target_language,
+            batch_size=1000
+        )
+
+    def validate_excel_conversion_settings(self, settings) -> tuple[bool, str]:
+        """Валидирует настройки Excel конвертации"""
+        try:
+            if not settings:
+                return False, "Настройки конвертации не указаны"
+
+            if not settings.source_language or not settings.target_language:
+                return False, "Не указаны исходный или целевой языки"
+
+            if settings.source_language == settings.target_language:
+                return False, "Исходный и целевой языки не могут быть одинаковыми"
+
+            if not settings.selected_sheets:
+                return False, "Не выбраны листы для конвертации"
+
+            if not settings.column_mappings:
+                return False, "Не настроены колонки для конвертации"
+
+            # Проверяем, что для каждого выбранного листа есть маппинг
+            for sheet_name in settings.selected_sheets:
+                if sheet_name not in settings.column_mappings:
+                    return False, f"Не настроены колонки для листа '{sheet_name}'"
+
+                # Проверяем наличие текстовых колонок
+                from core.base import ColumnType
+                text_columns = [
+                    col for col in settings.column_mappings[sheet_name].values()
+                    if col.final_type == ColumnType.TEXT
+                ]
+
+                if len(text_columns) < 2:
+                    return False, f"Лист '{sheet_name}': недостаточно текстовых колонок (нужно минимум 2)"
+
+            return True, "OK"
+
+        except Exception as e:
+            logger.error(f"Error validating Excel settings: {e}")
+            return False, f"Ошибка валидации: {e}"
+
+    def get_excel_file_info(self, filepath: Path) -> Dict:
+        """Получает информацию об Excel файле для GUI"""
+        try:
+            analysis = self.analyze_excel_file(filepath)
+
+            total_segments = analysis.get_total_segments()
+            sheets_info = f"{len(analysis.sheets)} листов"
+
+            return {
+                'path': filepath,
+                'name': filepath.name,
+                'size_mb': filepath.stat().st_size / (1024 * 1024),
+                'format': 'Excel Workbook',
+                'format_icon': '📊',
+                'extra_info': f"{sheets_info}, ~{total_segments} сегментов",
+                'is_supported': True,
+                'is_excel': True,
+                'analysis': analysis
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting Excel file info: {e}")
+            return {
+                'path': filepath,
+                'name': filepath.name,
+                'size_mb': filepath.stat().st_size / (1024 * 1024),
+                'format': 'Excel Workbook (ошибка)',
+                'format_icon': '⚠️',
+                'extra_info': f"Ошибка анализа: {e}",
+                'is_supported': False,
+                'is_excel': True
+            }
+
+    # ===========================================
+    # ОБНОВЛЕННЫЕ МЕТОДЫ
+    # ===========================================
+
     def _auto_detect_languages_from_files(self, new_files: List[Path]):
         """Автоопределение языков из новых файлов"""
         if self.auto_detected_languages:
@@ -144,3 +310,16 @@ class MainController:
                     self.auto_detected_languages = languages
                     logger.info(f"Auto-detected languages: {languages}")
                     break
+            elif self.is_excel_file(filepath):
+                # Для Excel файлов тоже можем попробовать определить языки
+                try:
+                    analysis = self.analyze_excel_file(filepath)
+                    if analysis.detected_source_lang and analysis.detected_target_lang:
+                        self.auto_detected_languages = {
+                            'source': analysis.detected_source_lang,
+                            'target': analysis.detected_target_lang
+                        }
+                        logger.info(f"Auto-detected languages from Excel: {self.auto_detected_languages}")
+                        break
+                except Exception:
+                    continue  # Игнорируем ошибки автоопределения для Excel
