@@ -1,4 +1,4 @@
-# gui/windows/main_window.py
+# gui/windows/main_window.py - ОБНОВЛЕННАЯ ВЕРСИЯ
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
@@ -15,23 +15,25 @@ logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
-    """Главное окно приложения с исправленными соединениями сигналов"""
+    """ОБНОВЛЕНО: Главное окно с контроллером, БЕЗ прямой бизнес-логики"""
 
     def __init__(self):
         super().__init__()
+
+        # НОВОЕ: Создаем контроллер
+        from controller import MainController
+        self.controller = MainController()
+
         self.setup_window()
         self.setup_ui()
         self.setup_worker()
         self.setup_connections()
 
-        # Список файлов для конвертации
-        self.file_paths: List[Path] = []
-
         # Состояние конвертации
         self.is_converting = False
         self.current_batch_results = []
 
-        logger.info("Main window initialized")
+        logger.info("Main window initialized with controller")
 
     def setup_window(self):
         """Настройка основного окна"""
@@ -117,7 +119,9 @@ class MainWindow(QMainWindow):
         # Область для перетаскивания файлов
         from gui.widgets.drop_area import SmartDropArea
         self.drop_area = SmartDropArea()
-        self.drop_area.files_dropped.connect(self.add_files)
+        # НОВОЕ: Подключаем к контроллеру вместо прямой обработки
+        self.drop_area.files_dropped.connect(self.on_files_dropped)
+        self.drop_area.files_dragged.connect(self.on_files_dragged)  # Для проверки при перетаскивании
         layout.addWidget(self.drop_area)
 
         # Кнопки управления файлами
@@ -137,6 +141,9 @@ class MainWindow(QMainWindow):
         # Список файлов
         from gui.widgets.file_list import FileListWidget
         self.file_list = FileListWidget()
+        # НОВОЕ: Подключаем к контроллеру
+        self.file_list.file_remove_requested.connect(self.on_file_remove_requested)
+        self.file_list.clear_all_btn.clicked.connect(self.clear_files)
         layout.addWidget(self.file_list)
 
         # Настройки конвертации
@@ -298,7 +305,7 @@ class MainWindow(QMainWindow):
         return group
 
     def setup_worker(self):
-        """Настраивает worker для конвертации с правильными соединениями"""
+        """Настраивает worker для конвертации"""
         from workers.conversion_worker import BatchConversionWorker
 
         # Создаем worker и поток
@@ -306,7 +313,7 @@ class MainWindow(QMainWindow):
         self.worker_thread = QThread()
         self.worker.moveToThread(self.worker_thread)
 
-        # ИСПРАВЛЕНО: Правильное подключение сигналов прогресса
+        # Подключение сигналов прогресса
         self.worker.progress_changed.connect(self.on_progress_update)
         self.worker.file_started.connect(self.on_file_started)
         self.worker.file_completed.connect(self.on_file_completed)
@@ -332,39 +339,142 @@ class MainWindow(QMainWindow):
         version_label.setStyleSheet("color: #666; font-size: 10px;")
         self.statusBar().addPermanentWidget(version_label)
 
-    # ИСПРАВЛЕННЫЕ методы обработки сигналов
+    # НОВЫЕ методы для работы с контроллером
+
+    def on_files_dropped(self, filepaths: List[str]):
+        """НОВОЕ: Обработчик добавления файлов через контроллер"""
+        files_info = self.controller.add_files(filepaths)
+
+        if files_info:
+            self.file_list.update_files(files_info)
+            self.log_message(f"Добавлено файлов: {len(files_info)}")
+            self._update_auto_languages_display()
+        else:
+            self.log_message("Не найдено поддерживаемых файлов")
+
+    def on_files_dragged(self, filepaths: List[str]):
+        """НОВОЕ: Обработчик проверки файлов при перетаскивании"""
+        format_name, valid_files = self.controller.detect_drop_files(filepaths)
+        is_valid = len(valid_files) > 0
+        self.drop_area.set_format_info(format_name, is_valid)
+
+    def on_file_remove_requested(self, filepath: Path):
+        """НОВОЕ: Обработчик удаления файла через контроллер"""
+        if self.controller.remove_file(filepath):
+            # Обновляем отображение - получаем все файлы заново
+            self._refresh_file_list()
+            self.log_message(f"Удален файл: {filepath.name}")
+
+    def open_file_dialog(self):
+        """ОБНОВЛЕНО: Открывает диалог выбора файлов через контроллер"""
+        files, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Выберите файлы для конвертации",
+            "",
+            "Все поддерживаемые (*.sdltm *.xlsx *.xls);;SDLTM (*.sdltm);;Excel (*.xlsx *.xls)"
+        )
+
+        if files:
+            self.on_files_dropped(files)
+
+    def clear_files(self):
+        """ОБНОВЛЕНО: Очищает список файлов через контроллер"""
+        self.controller.clear_files()
+        self.file_list.clear()
+        self.progress_widget.reset()
+        self.results_text.clear()
+        self.log_message("Список файлов очищен")
+        self._update_auto_languages_display()
+
+    def start_conversion(self):
+        """ОБНОВЛЕНО: Запускает конвертацию через контроллер"""
+        # Собираем опции из GUI
+        gui_options = {
+            'export_tmx': self.tmx_cb.isChecked(),
+            'export_xlsx': self.xlsx_cb.isChecked(),
+            'export_json': self.json_cb.isChecked(),
+            'source_lang': self.src_lang_edit.text().strip(),
+            'target_lang': self.tgt_lang_edit.text().strip()
+        }
+
+        # Валидируем через контроллер
+        is_valid, error_msg = self.controller.validate_conversion_request(gui_options)
+        if not is_valid:
+            QMessageBox.warning(self, "Ошибка", error_msg)
+            return
+
+        # Подготавливаем опции через контроллер
+        options = self.controller.prepare_conversion_options(gui_options)
+        files = self.controller.get_files_for_conversion()
+
+        # Переключаем UI в режим конвертации
+        self.is_converting = True
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.add_files_btn.setEnabled(False)
+
+        # Очищаем предыдущие результаты
+        self.results_text.clear()
+        self.progress_widget.reset()
+        self.file_list.reset_all_status()
+
+        # Запускаем конвертацию через worker
+        self.worker.convert_batch(files, options)
+        self.log_message(f"🚀 Начата конвертация {len(files)} файлов")
+
+    def _refresh_file_list(self):
+        """Обновляет отображение списка файлов"""
+        # Создаем файловую информацию для всех текущих файлов
+        files_info = []
+        for filepath in self.controller.get_files_for_conversion():
+            file_info = self.controller.file_service.get_file_info(filepath)
+            files_info.append({
+                'path': filepath,
+                'name': file_info['name'],
+                'size_mb': file_info['size_mb'],
+                'format': file_info['format'],
+                'format_icon': file_info['format_icon'],
+                'extra_info': file_info['extra_info']
+            })
+
+        self.file_list.update_files(files_info)
+
+    def _update_auto_languages_display(self):
+        """Обновляет отображение автоопределенных языков"""
+        languages = self.controller.get_auto_detected_languages()
+
+        if languages:
+            lang_text = f"{languages['source']} → {languages['target']}"
+            self.auto_langs_label.setText(lang_text)
+            self.auto_langs_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
+        else:
+            self.auto_langs_label.setText("Будут определены из файла")
+            self.auto_langs_label.setStyleSheet("color: #666; font-style: italic;")
+
+    # Остальные методы без изменений (обработчики worker'а и UI)
 
     def on_progress_update(self, progress: int, message: str, current_file: int, total_files: int):
-        """ИСПРАВЛЕНО: Обработчик обновления прогресса"""
-        logger.debug(f"Progress update: {progress}% - {message} ({current_file}/{total_files})")
-
-        # Обновляем прогресс-виджет
+        """Обработчик обновления прогресса"""
         self.progress_widget.update_progress(progress, message, current_file, total_files)
 
-        # Обновляем статус бар
         if total_files > 0:
             self.status_label.setText(f"Обработка файла {current_file}/{total_files}: {message}")
         else:
             self.status_label.setText(message)
 
     def on_file_started(self, filepath: Path):
-        """ИСПРАВЛЕНО: Обработчик начала конвертации файла"""
+        """Обработчик начала конвертации файла"""
         logger.info(f"File started: {filepath.name}")
         self.log_message(f"Начата обработка: {filepath.name}")
 
-        # Обновляем прогресс для конкретного файла
         file_item = self.file_list.get_file_item(filepath)
         if file_item:
             file_item.set_conversion_progress(0, "Начинаем обработку...")
 
     def on_file_completed(self, filepath: Path, result):
-        """ИСПРАВЛЕНО: Обработчик завершения конвертации файла"""
-        logger.info(f"File completed: {filepath.name}, success: {result.success}")
-
-        # Обновляем статистику в progress_widget
+        """Обработчик завершения конвертации файла"""
         self.progress_widget.on_file_completed(result.success)
 
-        # Обновляем файл в списке
         file_item = self.file_list.get_file_item(filepath)
         if file_item:
             if result.success:
@@ -375,11 +485,9 @@ class MainWindow(QMainWindow):
                 error_msg = '; '.join(result.errors) if result.errors else "Неизвестная ошибка"
                 file_item.set_conversion_completed(False, error_msg)
 
-        # Логируем результат
         if result.success:
             self.log_message(f"✅ Завершено: {filepath.name}")
 
-            # Показываем результаты
             stats = result.stats
             output_info = "\n".join([f"  📄 {f.name}" for f in result.output_files])
             result_text = f"""
@@ -398,7 +506,7 @@ class MainWindow(QMainWindow):
             self.log_message(f"❌ Ошибка: {filepath.name} - {error_msg}")
 
     def on_batch_completed(self, results: List):
-        """ИСПРАВЛЕНО: Обработчик завершения всей пакетной конвертации"""
+        """Обработчик завершения всей пакетной конвертации"""
         successful = sum(1 for r in results if r.success)
         total = len(results)
 
@@ -436,7 +544,7 @@ class MainWindow(QMainWindow):
             )
 
     def on_conversion_error(self, error_msg: str):
-        """ИСПРАВЛЕНО: Обработчик критических ошибок конвертации"""
+        """Обработчик критических ошибок конвертации"""
         logger.error(f"Conversion error: {error_msg}")
 
         # Возвращаем UI в обычный режим
@@ -459,172 +567,16 @@ class MainWindow(QMainWindow):
             f"Проверьте логи для подробностей."
         )
 
-    # Методы обработки событий
-
-    def add_files(self, filepaths: List[str]):
-        """Добавляет файлы в список"""
-        new_paths = [Path(fp) for fp in filepaths if Path(fp).exists()]
-
-        for path in new_paths:
-            if path not in self.file_paths:
-                self.file_paths.append(path)
-
-        self.file_list.update_files(self.file_paths)
-        self.log_message(f"Добавлено файлов: {len(new_paths)}")
-
-        # Автоопределение языков из первого SDLTM файла
-        self._auto_detect_languages()
-
-    def open_file_dialog(self):
-        """Открывает диалог выбора файлов"""
-        files, _ = QFileDialog.getOpenFileNames(
-            self,
-            "Выберите файлы для конвертации",
-            "",
-            "Все поддерживаемые (*.sdltm *.xlsx *.xls);;SDLTM (*.sdltm);;Excel (*.xlsx *.xls)"
-        )
-
-        if files:
-            self.add_files(files)
-
-    def clear_files(self):
-        """Очищает список файлов"""
-        self.file_paths.clear()
-        self.file_list.clear()
-        self.progress_widget.reset()
-        self.results_text.clear()
-        self.log_message("Список файлов очищен")
-
-        # Сбрасываем автоопределенные языки
-        self.auto_langs_label.setText("Будут определены из файла")
-
-    def _auto_detect_languages(self):
-        """Автоматически определяет языки из SDLTM файлов"""
-        sdltm_files = [f for f in self.file_paths if f.suffix.lower() == '.sdltm']
-        if not sdltm_files:
-            return
-
-        try:
-            import sqlite3
-            import xml.etree.ElementTree as ET
-
-            # Берем первый SDLTM файл для анализа
-            sdltm_path = sdltm_files[0]
-
-            with sqlite3.connect(str(sdltm_path)) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT source_segment, target_segment FROM translation_units LIMIT 10")
-
-                src_lang = "unknown"
-                tgt_lang = "unknown"
-
-                for src_xml, tgt_xml in cursor.fetchall():
-                    try:
-                        # Парсим source
-                        if src_lang == "unknown":
-                            root = ET.fromstring(src_xml)
-                            lang_elem = root.find(".//CultureName")
-                            if lang_elem is not None and lang_elem.text:
-                                src_lang = self._normalize_language(lang_elem.text)
-
-                        # Парсим target
-                        if tgt_lang == "unknown":
-                            root = ET.fromstring(tgt_xml)
-                            lang_elem = root.find(".//CultureName")
-                            if lang_elem is not None and lang_elem.text:
-                                tgt_lang = self._normalize_language(lang_elem.text)
-
-                        # Если нашли оба языка, прекращаем поиск
-                        if src_lang != "unknown" and tgt_lang != "unknown":
-                            break
-
-                    except Exception:
-                        continue
-
-                if src_lang != "unknown" or tgt_lang != "unknown":
-                    lang_text = f"{src_lang} → {tgt_lang}"
-                    self.auto_langs_label.setText(lang_text)
-                    self.auto_langs_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
-                    self.log_message(f"Автоопределены языки: {lang_text}")
-
-        except Exception as e:
-            self.log_message(f"Ошибка автоопределения языков: {e}")
-
-    def _normalize_language(self, lang_code: str) -> str:
-        """Нормализует языковой код"""
-        if not lang_code:
-            return "unknown"
-
-        # Стандартные замены
-        lang_map = {
-            "en": "en-US", "de": "de-DE", "fr": "fr-FR", "it": "it-IT",
-            "es": "es-ES", "pt": "pt-PT", "ru": "ru-RU", "ja": "ja-JP",
-            "ko": "ko-KR", "zh": "zh-CN", "pl": "pl-PL", "tr": "tr-TR"
-        }
-
-        code = lang_code.lower().replace("_", "-")
-
-        # Если уже полный код
-        if "-" in code and len(code) == 5:
-            return code
-
-        # Добавляем регион по умолчанию
-        return lang_map.get(code, f"{code}-XX")
-
-    def on_files_changed(self, file_count: int):
-        """Обработчик изменения списка файлов"""
-        self.start_btn.setEnabled(file_count > 0 and not self.is_converting)
-        self.status_label.setText(f"Файлов в очереди: {file_count}")
-
-    def start_conversion(self):
-        """ИСПРАВЛЕНО: Запускает конвертацию с правильными опциями"""
-        if not self.file_paths:
-            QMessageBox.warning(self, "Ошибка", "Нет файлов для конвертации")
-            return
-
-        # Проверяем, что выбран хотя бы один формат экспорта
-        if not (self.tmx_cb.isChecked() or self.xlsx_cb.isChecked() or self.json_cb.isChecked()):
-            QMessageBox.warning(self, "Ошибка", "Выберите хотя бы один формат экспорта")
-            return
-
-        # Создаем правильные опции конвертации
-        from core.base import ConversionOptions
-
-        src_lang = self.src_lang_edit.text().strip() or "auto"
-        tgt_lang = self.tgt_lang_edit.text().strip() or "auto"
-
-        options = ConversionOptions(
-            export_tmx=self.tmx_cb.isChecked(),
-            export_xlsx=self.xlsx_cb.isChecked(),
-            export_json=self.json_cb.isChecked(),
-            source_lang=src_lang,
-            target_lang=tgt_lang,
-            batch_size=1000,
-            # ИСПРАВЛЕНО: Передаем колбэки для обновления UI
-            progress_callback=None,  # Не используем прямые колбэки, используем сигналы
-            should_stop_callback=lambda: not self.is_converting
-        )
-
-        # Переключаем UI в режим конвертации
-        self.is_converting = True
-        self.start_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
-        self.add_files_btn.setEnabled(False)
-
-        # Очищаем предыдущие результаты
-        self.results_text.clear()
-        self.progress_widget.reset()
-        self.file_list.reset_all_status()
-
-        # ИСПРАВЛЕНО: Запускаем конвертацию через сигналы Qt
-        self.worker.convert_batch(self.file_paths.copy(), options)
-        self.log_message(f"🚀 Начата конвертация {len(self.file_paths)} файлов")
-
     def stop_conversion(self):
         """Останавливает конвертацию"""
         self.is_converting = False
         self.worker.stop_batch()
         self.log_message("🛑 Запрошена остановка конвертации...")
+
+    def on_files_changed(self, file_count: int):
+        """Обработчик изменения списка файлов"""
+        self.start_btn.setEnabled(file_count > 0 and not self.is_converting)
+        self.status_label.setText(f"Файлов в очереди: {file_count}")
 
     def log_message(self, message: str):
         """Добавляет сообщение в лог"""

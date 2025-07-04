@@ -1,4 +1,4 @@
-# gui/widgets/drop_area.py
+# gui/widgets/drop_area.py - ОЧИЩЕННАЯ ВЕРСИЯ
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PySide6.QtCore import Signal, Qt
@@ -8,9 +8,10 @@ from typing import List
 
 
 class SmartDropArea(QWidget):
-    """Умная область для перетаскивания файлов с автоопределением формата"""
+    """ОЧИЩЕНО: Область для перетаскивания файлов БЕЗ бизнес-логики"""
 
     files_dropped = Signal(list)  # List[str] - пути к файлам
+    files_dragged = Signal(list)  # Новый сигнал для проверки файлов при перетаскивании
 
     def __init__(self):
         super().__init__()
@@ -21,16 +22,6 @@ class SmartDropArea(QWidget):
         # Состояния
         self.is_dragging = False
         self.detected_format = ""
-
-        # Поддерживаемые форматы
-        self.supported_formats = {
-            '.sdltm': 'SDL Trados Memory',
-            '.xlsx': 'Excel Workbook',
-            '.xls': 'Excel Workbook',
-            '.tmx': 'Translation Memory eXchange',
-            '.xml': 'XML/Termbase',
-            '.mtf': 'MultiTerm Format'
-        }
 
     def setup_ui(self):
         """Настройка интерфейса"""
@@ -150,50 +141,25 @@ class SmartDropArea(QWidget):
             }
         """)
 
-    def detect_format(self, filepaths: List[str]) -> tuple[str, List[str]]:
-        """
-        Определяет формат файлов
-        Returns: (format_name, valid_files)
-        """
-        valid_files = []
-        detected_formats = set()
-
-        for filepath in filepaths:
-            path = Path(filepath)
-            if not path.exists() or not path.is_file():
-                continue
-
-            suffix = path.suffix.lower()
-            if suffix in self.supported_formats:
-                valid_files.append(filepath)
-                detected_formats.add(self.supported_formats[suffix])
-
-        if not valid_files:
-            return "Неподдерживаемый формат", []
-
-        if len(detected_formats) == 1:
-            format_name = list(detected_formats)[0]
+    def set_format_info(self, format_name: str, is_valid: bool):
+        """НОВОЕ: Устанавливает информацию о формате извне"""
+        if is_valid:
+            self.format_label.setText(f"Обнаружен формат: {format_name}")
+            self.update_style_hover()
         else:
-            format_name = f"Смешанные форматы ({len(detected_formats)})"
-
-        return format_name, valid_files
+            self.format_label.setText("❌ Неподдерживаемые файлы")
+            self.update_style_error()
 
     def dragEnterEvent(self, event: QDragEnterEvent):
-        """Обработчик входа перетаскивания"""
+        """УПРОЩЕНО: Обработчик входа перетаскивания"""
         if event.mimeData().hasUrls():
             filepaths = [url.toLocalFile() for url in event.mimeData().urls()]
-            format_name, valid_files = self.detect_format(filepaths)
 
-            if valid_files:
-                self.detected_format = format_name
-                self.format_label.setText(f"Обнаружен формат: {format_name}")
-                self.update_style_hover()
-                self.is_dragging = True
-                event.acceptProposedAction()
-            else:
-                self.format_label.setText("❌ Неподдерживаемые файлы")
-                self.update_style_error()
-                event.ignore()
+            # Эмитим сигнал для проверки файлов ВНЕШНИМ сервисом
+            self.files_dragged.emit(filepaths)
+
+            self.is_dragging = True
+            event.acceptProposedAction()
         else:
             event.ignore()
 
@@ -217,21 +183,19 @@ class SmartDropArea(QWidget):
         """)
 
     def dropEvent(self, event: QDropEvent):
-        """Обработчик сброса файлов"""
+        """УПРОЩЕНО: Обработчик сброса файлов"""
         if event.mimeData().hasUrls():
             filepaths = [url.toLocalFile() for url in event.mimeData().urls()]
-            format_name, valid_files = self.detect_format(filepaths)
 
-            if valid_files:
-                self.files_dropped.emit(valid_files)
-                self.format_label.setText(f"✅ Добавлено файлов: {len(valid_files)}")
+            # Просто эмитим файлы, логику проверки делает контроллер
+            self.files_dropped.emit(filepaths)
 
-                # Возвращаем стиль через секунду
-                from PySide6.QtCore import QTimer
-                QTimer.singleShot(2000, self.reset_style)
-            else:
-                self.format_label.setText("❌ Нет поддерживаемых файлов")
-                QTimer.singleShot(3000, self.reset_style)
+            # Временно показываем статус добавления
+            self.format_label.setText(f"✅ Обрабатываем {len(filepaths)} файлов...")
+
+            # Возвращаем стиль через секунду
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(2000, self.reset_style)
 
         self.is_dragging = False
         event.acceptProposedAction()

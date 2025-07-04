@@ -1,4 +1,4 @@
-# gui/widgets/progress_widget.py - ИСПРАВЛЕНО: Убран ETA, исправлена скорость
+# gui/widgets/progress_widget.py - ИСПРАВЛЕННАЯ ВЕРСИЯ БЕЗ СКОРОСТИ
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QProgressBar,
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class ProgressWidget(QWidget):
-    """ИСПРАВЛЕНО: Виджет прогресса без ETA, с исправленной скоростью"""
+    """Виджет прогресса БЕЗ скорости"""
 
     def __init__(self):
         super().__init__()
@@ -29,7 +29,6 @@ class ProgressWidget(QWidget):
         self.current_file_index = 0
         self.total_files = 0
 
-        # УБРАНО: Таймер для ETA больше не нужен
         # Анимация прогресса
         self.progress_animation = None
 
@@ -37,7 +36,7 @@ class ProgressWidget(QWidget):
         self.reset()
 
     def setup_ui(self):
-        """ИСПРАВЛЕНО: Настройка интерфейса без ETA"""
+        """Настройка интерфейса БЕЗ скорости"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
@@ -114,7 +113,7 @@ class ProgressWidget(QWidget):
 
         layout.addWidget(progress_group)
 
-        # Статистика
+        # Статистика - УБРАЛИ СКОРОСТЬ
         stats_group = QGroupBox("📈 Статистика")
         stats_layout = QVBoxLayout(stats_group)
 
@@ -130,10 +129,7 @@ class ProgressWidget(QWidget):
         stats_grid.addWidget(error_frame)
         self.error_label = error_frame.findChild(QLabel, "value")
 
-        # Скорость
-        speed_frame = self.create_stat_frame("⚡", "Скорость", "0/мин", "#FF9800")
-        stats_grid.addWidget(speed_frame)
-        self.speed_label = speed_frame.findChild(QLabel, "value")
+        # УБРАЛИ СКОРОСТЬ ПОЛНОСТЬЮ
 
         stats_layout.addLayout(stats_grid)
         layout.addWidget(stats_group)
@@ -185,7 +181,7 @@ class ProgressWidget(QWidget):
         return frame
 
     def reset(self):
-        """ИСПРАВЛЕНО: Полный сброс виджета"""
+        """Полный сброс виджета"""
         with QMutexLocker(self.mutex):
             # Сбрасываем значения
             self.start_time = None
@@ -207,8 +203,6 @@ class ProgressWidget(QWidget):
             self.success_label.setText("0")
         if self.error_label:
             self.error_label.setText("0")
-        if self.speed_label:
-            self.speed_label.setText("0/мин")
 
         # Сбрасываем стили
         self.reset_styles()
@@ -216,7 +210,7 @@ class ProgressWidget(QWidget):
         logger.debug("Progress widget reset completed")
 
     def update_progress(self, progress: int, message: str, current_file: int = 0, total_files: int = 0):
-        """ИСПРАВЛЕНО: Обновление прогресса без ETA"""
+        """Обновление прогресса"""
         logger.debug(f"Progress update: {progress}% - {message} ({current_file}/{total_files})")
 
         with QMutexLocker(self.mutex):
@@ -245,7 +239,7 @@ class ProgressWidget(QWidget):
             self.files_label.setText(f"Файлов: {current_file} / {total_files}")
 
     def animate_progress(self, target_value: int):
-        """ИСПРАВЛЕНО: Плавная анимация прогресса"""
+        """Плавная анимация прогресса"""
         if not self.main_progress:
             return
 
@@ -266,7 +260,7 @@ class ProgressWidget(QWidget):
         self.progress_animation.start()
 
     def on_file_completed(self, success: bool):
-        """ИСПРАВЛЕНО: Обработка завершения файла с расчетом скорости"""
+        """Обработка завершения файла"""
         with QMutexLocker(self.mutex):
             self.processed_files += 1
 
@@ -275,26 +269,13 @@ class ProgressWidget(QWidget):
             else:
                 self.failed_files += 1
 
-            # ИСПРАВЛЕНО: Рассчитываем скорость здесь
-            start_time = self.start_time
-
         # Обновляем статистику
         self.update_stats()
-
-        # ИСПРАВЛЕНО: Обновляем скорость при каждом завершенном файле
-        if start_time:
-            elapsed = datetime.now() - start_time
-            elapsed_seconds = elapsed.total_seconds()
-
-            if elapsed_seconds > 0:
-                files_per_minute = (self.processed_files / elapsed_seconds) * 60
-                if self.speed_label:
-                    self.speed_label.setText(f"{files_per_minute:.1f}/мин")
 
         logger.debug(f"File completed: success={success}, processed={self.processed_files}")
 
     def update_stats(self):
-        """ИСПРАВЛЕНО: Обновление статистики"""
+        """Обновление статистики"""
         with QMutexLocker(self.mutex):
             success_count = self.successful_files
             error_count = self.failed_files
@@ -306,7 +287,7 @@ class ProgressWidget(QWidget):
             self.error_label.setText(str(error_count))
 
     def set_total_files(self, total: int):
-        """ИСПРАВЛЕНО: Установка общего количества файлов"""
+        """Установка общего количества файлов"""
         with QMutexLocker(self.mutex):
             self.total_files = total
 
@@ -314,7 +295,7 @@ class ProgressWidget(QWidget):
         logger.debug(f"Total files set to: {total}")
 
     def set_completion_status(self, success: bool, message: str = ""):
-        """ИСПРАВЛЕНО: Финальный статус"""
+        """Финальный статус"""
         logger.info(f"Setting completion status: success={success}, message={message}")
 
         if success:
@@ -369,7 +350,7 @@ class ProgressWidget(QWidget):
             """)
 
     def set_error_status(self, error_message: str):
-        """ИСПРАВЛЕНО: Статус ошибки"""
+        """Статус ошибки"""
         logger.error(f"Setting error status: {error_message}")
 
         self.status_label.setText("💥 Критическая ошибка")
@@ -383,7 +364,7 @@ class ProgressWidget(QWidget):
         """)
 
     def reset_styles(self):
-        """ИСПРАВЛЕНО: Сброс стилей"""
+        """Сброс стилей"""
         self.status_label.setStyleSheet("""
             QLabel {
                 font-size: 14px;
@@ -411,7 +392,7 @@ class ProgressWidget(QWidget):
         """)
 
     def get_current_stats(self) -> dict:
-        """ИСПРАВЛЕНО: Получение текущей статистики"""
+        """Получение текущей статистики"""
         with QMutexLocker(self.mutex):
             return {
                 "successful_files": self.successful_files,
@@ -423,7 +404,7 @@ class ProgressWidget(QWidget):
             }
 
     def closeEvent(self, event):
-        """ИСПРАВЛЕНО: Закрытие виджета"""
+        """Закрытие виджета"""
         if self.progress_animation and self.progress_animation.state() == QPropertyAnimation.Running:
             self.progress_animation.stop()
 

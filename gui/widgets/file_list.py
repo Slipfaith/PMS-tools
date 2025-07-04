@@ -1,4 +1,4 @@
-# gui/widgets/file_list.py - ИСПРАВЛЕННАЯ ВЕРСИЯ С ПРАВИЛЬНЫМ МАКЕТОМ
+# gui/widgets/file_list.py - ОБНОВЛЕННАЯ ВЕРСИЯ
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
@@ -14,18 +14,18 @@ logger = logging.getLogger(__name__)
 
 
 class FileListItem(QWidget):
-    """ИСПРАВЛЕНО: Виджет для отображения файла с правильным макетом"""
+    """ОЧИЩЕНО: Виджет для отображения файла БЕЗ бизнес-логики"""
 
     remove_requested = Signal(Path)
 
-    def __init__(self, filepath: Path):
+    def __init__(self, file_info: Dict):
         super().__init__()
-        self.filepath = filepath
+        self.filepath = file_info['path']
+        self.file_info = file_info
         self.setup_ui()
-        self.analyze_file()
 
     def setup_ui(self):
-        """ИСПРАВЛЕНО: Настройка интерфейса с правильными отступами"""
+        """Настройка интерфейса"""
         # Основной макет с увеличенными отступами
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(12, 10, 12, 10)
@@ -36,14 +36,14 @@ class FileListItem(QWidget):
         top_layout.setSpacing(8)
 
         # Иконка формата
-        self.format_icon = QLabel(self.get_format_icon())
+        self.format_icon = QLabel(self.file_info['format_icon'])
         self.format_icon.setStyleSheet("font-size: 18px; margin-right: 4px;")
         self.format_icon.setFixedSize(24, 24)
         self.format_icon.setAlignment(Qt.AlignCenter)
         top_layout.addWidget(self.format_icon)
 
         # Имя файла
-        self.name_label = QLabel(self.filepath.name)
+        self.name_label = QLabel(self.file_info['name'])
         self.name_label.setStyleSheet("""
             QLabel {
                 font-weight: bold;
@@ -83,8 +83,16 @@ class FileListItem(QWidget):
 
         main_layout.addLayout(top_layout)
 
-        # Информация о файле
-        self.info_label = QLabel()
+        # Информация о файле - ТЕПЕРЬ БЕРЕТСЯ ИЗ ПЕРЕДАННЫХ ДАННЫХ
+        size_str = f"{self.file_info['size_mb']:.1f} MB" if self.file_info['size_mb'] > 0 else "< 1 MB"
+        info_parts = [self.file_info['format'], size_str]
+
+        if self.file_info['extra_info']:
+            info_parts.append(self.file_info['extra_info'])
+
+        info_text = " • ".join(info_parts)
+
+        self.info_label = QLabel(info_text)
         self.info_label.setStyleSheet("""
             QLabel {
                 font-size: 11px;
@@ -146,96 +154,6 @@ class FileListItem(QWidget):
         self.setMinimumHeight(80)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-    def get_format_icon(self) -> str:
-        """Возвращает иконку для формата файла"""
-        suffix = self.filepath.suffix.lower()
-        icons = {
-            '.sdltm': '🗄️',
-            '.xlsx': '📊',
-            '.xls': '📊',
-            '.tmx': '🔄',
-            '.xml': '📋',
-            '.mtf': '📖'
-        }
-        return icons.get(suffix, '📄')
-
-    def analyze_file(self):
-        """Анализирует файл и показывает информацию"""
-        try:
-            # Размер файла
-            size_bytes = self.filepath.stat().st_size
-            if size_bytes < 1024:
-                size_str = f"{size_bytes} B"
-            elif size_bytes < 1024 * 1024:
-                size_str = f"{size_bytes / 1024:.1f} KB"
-            else:
-                size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
-
-            # Формат
-            format_name = self.get_format_name()
-
-            # Дополнительная информация
-            extra_info = self.get_extra_info()
-
-            info_parts = [format_name, size_str]
-            if extra_info:
-                info_parts.append(extra_info)
-
-            info_text = " • ".join(info_parts)
-            self.info_label.setText(info_text)
-
-        except Exception as e:
-            logger.warning(f"Error analyzing file {self.filepath}: {e}")
-            self.info_label.setText(f"Ошибка анализа: {e}")
-            self.info_label.setStyleSheet("color: #f44336; font-size: 11px;")
-
-    def get_format_name(self) -> str:
-        """Возвращает название формата"""
-        suffix = self.filepath.suffix.lower()
-        formats = {
-            '.sdltm': 'SDL Trados Memory',
-            '.xlsx': 'Excel Workbook',
-            '.xls': 'Excel Workbook',
-            '.tmx': 'TMX Memory',
-            '.xml': 'XML/Termbase',
-            '.mtf': 'MultiTerm Format'
-        }
-        return formats.get(suffix, 'Unknown Format')
-
-    def get_extra_info(self) -> str:
-        """Получает дополнительную информацию о файле"""
-        suffix = self.filepath.suffix.lower()
-
-        if suffix == '.sdltm':
-            return self.get_sdltm_info()
-        elif suffix in ['.xlsx', '.xls']:
-            return self.get_excel_info()
-
-        return ""
-
-    def get_sdltm_info(self) -> str:
-        """Получает информацию об SDLTM файле"""
-        try:
-            import sqlite3
-            with sqlite3.connect(str(self.filepath)) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT COUNT(*) FROM translation_units")
-                count = cursor.fetchone()[0]
-                return f"{count:,} сегментов"
-        except Exception:
-            return "Недоступно"
-
-    def get_excel_info(self) -> str:
-        """Получает информацию об Excel файле"""
-        try:
-            import openpyxl
-            wb = openpyxl.load_workbook(str(self.filepath), read_only=True)
-            sheets = len(wb.sheetnames)
-            wb.close()
-            return f"{sheets} лист(ов)"
-        except Exception:
-            return "Недоступно"
-
     def set_conversion_progress(self, progress: int, message: str = ""):
         """Устанавливает прогресс конвертации"""
         self.progress_bar.setVisible(True)
@@ -265,9 +183,10 @@ class FileListItem(QWidget):
 
 
 class FileListWidget(QWidget):
-    """ИСПРАВЛЕНО: Виджет для отображения списка файлов с правильным макетом"""
+    """ОЧИЩЕНО: Виджет для отображения списка файлов БЕЗ бизнес-логики"""
 
     files_changed = Signal(int)
+    file_remove_requested = Signal(Path)  # Проброс сигнала наверх
 
     def __init__(self):
         super().__init__()
@@ -275,7 +194,7 @@ class FileListWidget(QWidget):
         self.setup_ui()
 
     def setup_ui(self):
-        """ИСПРАВЛЕНО: Настройка интерфейса с правильными отступами"""
+        """Настройка интерфейса"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
@@ -336,7 +255,7 @@ class FileListWidget(QWidget):
             }
         """)
 
-        # ИСПРАВЛЕНО: Отключаем стандартное выделение
+        # Отключаем стандартное выделение
         self.list_widget.setSelectionMode(QListWidget.NoSelection)
         self.list_widget.setFocusPolicy(Qt.NoFocus)
 
@@ -345,23 +264,6 @@ class FileListWidget(QWidget):
         # Кнопки управления
         buttons_layout = QHBoxLayout()
         buttons_layout.setSpacing(8)
-
-        self.select_all_btn = QPushButton("Выбрать все")
-        self.select_all_btn.setStyleSheet("""
-            QPushButton {
-                padding: 6px 12px;
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                background: white;
-                color: #333;
-            }
-            QPushButton:hover {
-                background: #f5f5f5;
-                border-color: #bbb;
-            }
-        """)
-        self.select_all_btn.clicked.connect(self.select_all_files)
-        buttons_layout.addWidget(self.select_all_btn)
 
         self.clear_all_btn = QPushButton("Очистить все")
         self.clear_all_btn.setStyleSheet("""
@@ -377,43 +279,48 @@ class FileListWidget(QWidget):
                 border-color: #bbb;
             }
         """)
-        self.clear_all_btn.clicked.connect(self.clear_all_files)
+        # Сигнал будет подключен в main_window
         buttons_layout.addWidget(self.clear_all_btn)
 
         buttons_layout.addStretch()
 
         layout.addLayout(buttons_layout)
 
-    def update_files(self, filepaths: List[Path]):
-        """Обновляет список файлов"""
-        # Удаляем файлы, которых больше нет
+    def update_files(self, files_info: List[Dict]):
+        """ОБНОВЛЕНО: Обновляет список файлов из готовых данных"""
+        # Получаем новые пути
+        new_paths = {info['path'] for info in files_info}
         current_paths = set(self.file_items.keys())
-        new_paths = set(filepaths)
 
+        # Удаляем файлы, которых больше нет
         for path in current_paths - new_paths:
             self.remove_file(path)
 
         # Добавляем новые файлы
-        for path in new_paths - current_paths:
-            self.add_file(path)
+        for file_info in files_info:
+            path = file_info['path']
+            if path not in current_paths:
+                self.add_file(file_info)
 
         self.update_count()
 
-    def add_file(self, filepath: Path):
-        """Добавляет файл в список"""
+    def add_file(self, file_info: Dict):
+        """ОБНОВЛЕНО: Добавляет файл из готовых данных"""
+        filepath = file_info['path']
+
         if filepath in self.file_items:
             return
 
-        # Создаем виджет для файла
-        file_item = FileListItem(filepath)
-        file_item.remove_requested.connect(self.remove_file)
+        # Создаем виджет для файла из готовых данных
+        file_item = FileListItem(file_info)
+        file_item.remove_requested.connect(self.file_remove_requested.emit)  # Проброс сигнала
 
         # Создаем элемент списка
         list_item = QListWidgetItem()
 
-        # ИСПРАВЛЕНО: Устанавливаем правильный размер
+        # Устанавливаем правильный размер
         item_size = file_item.sizeHint()
-        item_size.setHeight(max(85, item_size.height()))  # Минимум 85px высоты
+        item_size.setHeight(max(85, item_size.height()))
         list_item.setSizeHint(item_size)
 
         # Добавляем в список
@@ -448,14 +355,6 @@ class FileListWidget(QWidget):
         self.list_widget.clear()
         self.file_items.clear()
         self.update_count()
-
-    def clear_all_files(self):
-        """Очищает все файлы"""
-        self.clear()
-
-    def select_all_files(self):
-        """Выбирает все файлы (заглушка для будущего функционала)"""
-        pass
 
     def update_count(self):
         """Обновляет счетчик файлов"""
