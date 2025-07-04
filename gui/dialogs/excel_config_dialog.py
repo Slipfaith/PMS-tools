@@ -409,6 +409,12 @@ class ExcelSheetWidget(QWidget):
            }
        """)
 
+        # Улучшаем читаемость строк
+        self.table.verticalHeader().setDefaultSectionSize(28)
+        font = self.table.font()
+        font.setPointSize(10)
+        self.table.setFont(font)
+
         self.populate_table()
         layout.addWidget(self.table)
 
