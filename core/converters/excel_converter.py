@@ -310,16 +310,24 @@ class ExcelConverter(StreamingConverter):
 
             logger.debug(f"Processing rows {current_row}-{end_row}")
 
-            # Обрабатываем батч
-            for row_idx in range(current_row, end_row + 1):
-                try:
-                    source_cell = sheet.cell(row=row_idx, column=source_col.index + 1)
-                    target_cell = sheet.cell(row=row_idx, column=target_col.index + 1)
+            # Обрабатываем батч с помощью iter_rows (значительно быстрее в read_only)
+            row_iter = sheet.iter_rows(
+                min_row=current_row,
+                max_row=end_row,
+                values_only=True
+            )
 
-                    source_text = str(source_cell.value).strip() if source_cell.value else ''
-                    target_text = str(target_cell.value).strip() if target_cell.value else ''
+            row_idx = current_row
+            for row_values in row_iter:
+                try:
+                    src_val = row_values[source_col.index] if source_col.index < len(row_values) else None
+                    tgt_val = row_values[target_col.index] if target_col.index < len(row_values) else None
+
+                    source_text = str(src_val).strip() if src_val else ''
+                    target_text = str(tgt_val).strip() if tgt_val else ''
 
                     if not source_text and not target_text:
+                        row_idx += 1
                         continue
 
                     segment = TranslationSegment(
@@ -331,19 +339,18 @@ class ExcelConverter(StreamingConverter):
 
                     # Добавляем комментарии
                     for comment_col in comment_cols:
-                        try:
-                            comment_cell = sheet.cell(row=row_idx, column=comment_col.index + 1)
-                            comment_text = str(comment_cell.value).strip() if comment_cell.value else ''
+                        if comment_col.index < len(row_values):
+                            comment_val = row_values[comment_col.index]
+                            comment_text = str(comment_val).strip() if comment_val else ''
                             if comment_text:
                                 segment.add_comment(comment_text)
-                        except Exception:
-                            continue
 
                     segments.append(segment)
 
                 except Exception as e:
                     logger.debug(f"Error processing row {row_idx}: {e}")
-                    continue
+
+                row_idx += 1
 
             current_row = end_row + 1
 
@@ -352,7 +359,7 @@ class ExcelConverter(StreamingConverter):
             if hasattr(options, 'progress_callback') and options.progress_callback:
                 try:
                     options.progress_callback(progress, f"Обработано {current_row}/{sheet.max_row} строк")
-                except:
+                except Exception:
                     pass
 
         logger.info(f"Sheet '{sheet_name}': extracted {len(segments)} segments")
