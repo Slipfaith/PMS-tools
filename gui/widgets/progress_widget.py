@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QProgressBar,
-    QLabel, QGroupBox, QFrame
+    QLabel, QGroupBox
 )
 from PySide6.QtCore import Signal, Qt, QTimer, QPropertyAnimation, QEasingCurve, QMutex, QMutexLocker
 from PySide6.QtGui import QFont
@@ -90,72 +90,10 @@ class ProgressWidget(QWidget):
 
         layout.addWidget(progress_group)
 
-        # Статистика - УБРАЛИ СКОРОСТЬ
-        stats_group = QGroupBox("📈 Статистика")
-        stats_layout = QVBoxLayout(stats_group)
+        # Инициализируем счетчики без отображения статистики
+        self.success_label = None
+        self.error_label = None
 
-        stats_grid = QHBoxLayout()
-
-        # Успешно
-        success_frame = self.create_stat_frame("✅", "Успешно", "0", "#4CAF50")
-        stats_grid.addWidget(success_frame)
-        self.success_label = success_frame.findChild(QLabel, "value")
-
-        # Ошибки
-        error_frame = self.create_stat_frame("❌", "Ошибок", "0", "#f44336")
-        stats_grid.addWidget(error_frame)
-        self.error_label = error_frame.findChild(QLabel, "value")
-
-        # УБРАЛИ СКОРОСТЬ ПОЛНОСТЬЮ
-
-        stats_layout.addLayout(stats_grid)
-        layout.addWidget(stats_group)
-
-    def create_stat_frame(self, icon: str, title: str, value: str, color: str) -> QFrame:
-        """Создает рамку для статистики"""
-        frame = QFrame()
-        frame.setStyleSheet(f"""
-            QFrame {{
-                border: 1px solid #e0e0e0;
-                border-radius: 8px;
-                background: white;
-                padding: 8px;
-            }}
-            QFrame:hover {{
-                border-color: {color};
-                background: #fafafa;
-            }}
-        """)
-
-        layout = QVBoxLayout(frame)
-        layout.setSpacing(4)
-
-        # Иконка
-        icon_label = QLabel(icon)
-        icon_label.setAlignment(Qt.AlignCenter)
-        icon_label.setStyleSheet(f"font-size: 24px; color: {color};")
-        layout.addWidget(icon_label)
-
-        # Значение
-        value_label = QLabel(value)
-        value_label.setObjectName("value")
-        value_label.setAlignment(Qt.AlignCenter)
-        value_label.setStyleSheet(f"""
-            QLabel {{
-                font-size: 18px;
-                font-weight: bold;
-                color: {color};
-            }}
-        """)
-        layout.addWidget(value_label)
-
-        # Заголовок
-        title_label = QLabel(title)
-        title_label.setAlignment(Qt.AlignCenter)
-        title_label.setStyleSheet("font-size: 10px; color: #666;")
-        layout.addWidget(title_label)
-
-        return frame
 
     def reset(self):
         """Полный сброс виджета"""
