@@ -6,6 +6,12 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal, Qt, QTimer, QPropertyAnimation, QEasingCurve, QMutex, QMutexLocker
 from PySide6.QtGui import QFont
+from gui.ui_constants import (
+    PROGRESS_BAR_STYLE,
+    STATUS_LABEL_STYLE,
+    PERCENT_LABEL_STYLE,
+    FILES_LABEL_STYLE,
+)
 from datetime import datetime, timedelta
 import logging
 
@@ -50,22 +56,7 @@ class ProgressWidget(QWidget):
         self.main_progress.setMaximum(100)
         self.main_progress.setValue(0)
         self.main_progress.setMinimumHeight(30)
-        self.main_progress.setStyleSheet("""
-            QProgressBar {
-                border: 2px solid #e0e0e0;
-                border-radius: 15px;
-                background: #f8f9fa;
-                text-align: center;
-                font-weight: bold;
-                font-size: 13px;
-                color: #333;
-            }
-            QProgressBar::chunk {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #4CAF50, stop:1 #45a049);
-                border-radius: 13px;
-            }
-        """)
+        self.main_progress.setStyleSheet(PROGRESS_BAR_STYLE)
         progress_layout.addWidget(self.main_progress)
 
         # Информация о прогрессе
@@ -73,28 +64,14 @@ class ProgressWidget(QWidget):
 
         # Текущий статус
         self.status_label = QLabel("Готов к работе")
-        self.status_label.setStyleSheet("""
-            QLabel {
-                font-size: 14px;
-                color: #333;
-                font-weight: bold;
-                margin: 4px;
-            }
-        """)
+        self.status_label.setStyleSheet(STATUS_LABEL_STYLE)
         info_layout.addWidget(self.status_label)
 
         info_layout.addStretch()
 
         # Процент
         self.percent_label = QLabel("0%")
-        self.percent_label.setStyleSheet("""
-            QLabel {
-                font-size: 16px;
-                color: #4CAF50;
-                font-weight: bold;
-                margin: 4px;
-            }
-        """)
+        self.percent_label.setStyleSheet(PERCENT_LABEL_STYLE)
         info_layout.addWidget(self.percent_label)
 
         progress_layout.addLayout(info_layout)
@@ -104,7 +81,7 @@ class ProgressWidget(QWidget):
 
         # Файлы
         self.files_label = QLabel("Файлов: 0 / 0")
-        self.files_label.setStyleSheet("font-size: 12px; color: #666; margin: 2px;")
+        self.files_label.setStyleSheet(FILES_LABEL_STYLE)
         details_layout.addWidget(self.files_label)
 
         details_layout.addStretch()
@@ -365,31 +342,9 @@ class ProgressWidget(QWidget):
 
     def reset_styles(self):
         """Сброс стилей"""
-        self.status_label.setStyleSheet("""
-            QLabel {
-                font-size: 14px;
-                color: #333;
-                font-weight: bold;
-                margin: 4px;
-            }
-        """)
+        self.status_label.setStyleSheet(STATUS_LABEL_STYLE)
 
-        self.main_progress.setStyleSheet("""
-            QProgressBar {
-                border: 2px solid #e0e0e0;
-                border-radius: 15px;
-                background: #f8f9fa;
-                text-align: center;
-                font-weight: bold;
-                font-size: 13px;
-                color: #333;
-            }
-            QProgressBar::chunk {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #4CAF50, stop:1 #45a049);
-                border-radius: 13px;
-            }
-        """)
+        self.main_progress.setStyleSheet(PROGRESS_BAR_STYLE)
 
     def get_current_stats(self) -> dict:
         """Получение текущей статистики"""

@@ -7,6 +7,14 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QFont
+from gui.ui_constants import (
+    HEADER_FRAME_STYLE,
+    TITLE_LABEL_STYLE,
+    DESC_LABEL_STYLE,
+    ADD_EXCEL_BUTTON_STYLE,
+    START_BUTTON_STYLE,
+    STOP_BUTTON_STYLE,
+)
 from pathlib import Path
 from typing import List
 import logging
@@ -124,37 +132,17 @@ class MainWindow(QMainWindow):
     def create_header(self, layout):
         """Создает заголовок приложения"""
         header_frame = QFrame()
-        header_frame.setStyleSheet("""
-           QFrame {
-               background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                   stop:0 #4a90e2, stop:1 #357abd);
-               border-radius: 8px;
-               padding: 10px;
-           }
-       """)
+        header_frame.setStyleSheet(HEADER_FRAME_STYLE)
         header_layout = QHBoxLayout(header_frame)
 
         # Заголовок
         title_label = QLabel("Converter Pro v2.0")
-        title_label.setStyleSheet("""
-           QLabel {
-               color: white;
-               font-size: 24px;
-               font-weight: bold;
-               background: transparent;
-           }
-       """)
+        title_label.setStyleSheet(TITLE_LABEL_STYLE)
         header_layout.addWidget(title_label)
 
         # Описание
         desc_label = QLabel("Professional TM/TB/TMX/Excel Converter")
-        desc_label.setStyleSheet("""
-           QLabel {
-               color: #e8f4fd;
-               font-size: 14px;
-               background: transparent;
-           }
-       """)
+        desc_label.setStyleSheet(DESC_LABEL_STYLE)
         header_layout.addWidget(desc_label)
 
         header_layout.addStretch()
@@ -182,19 +170,7 @@ class MainWindow(QMainWindow):
 
         # НОВАЯ кнопка для Excel
         self.add_excel_btn = QPushButton("📊 Добавить Excel")
-        self.add_excel_btn.setStyleSheet("""
-           QPushButton {
-               background: #4CAF50;
-               color: white;
-               border: none;
-               border-radius: 4px;
-               padding: 6px 12px;
-               font-weight: bold;
-           }
-           QPushButton:hover {
-               background: #45a049;
-           }
-       """)
+        self.add_excel_btn.setStyleSheet(ADD_EXCEL_BUTTON_STYLE)
         self.add_excel_btn.clicked.connect(self.open_excel_dialog)
         file_buttons.addWidget(self.add_excel_btn)
 
@@ -221,46 +197,14 @@ class MainWindow(QMainWindow):
 
         self.start_btn = QPushButton("Начать конвертацию")
         self.start_btn.setMinimumHeight(40)
-        self.start_btn.setStyleSheet("""
-           QPushButton {
-               background: #4CAF50;
-               color: white;
-               border: none;
-               border-radius: 6px;
-               font-size: 16px;
-               font-weight: bold;
-           }
-           QPushButton:hover {
-               background: #45a049;
-           }
-           QPushButton:disabled {
-               background: #cccccc;
-               color: #666666;
-           }
-       """)
+        self.start_btn.setStyleSheet(START_BUTTON_STYLE)
         self.start_btn.clicked.connect(self.start_conversion)
         self.start_btn.setEnabled(False)
         action_buttons.addWidget(self.start_btn)
 
         self.stop_btn = QPushButton("Остановить")
         self.stop_btn.setMinimumHeight(40)
-        self.stop_btn.setStyleSheet("""
-           QPushButton {
-               background: #f44336;
-               color: white;
-               border: none;
-               border-radius: 6px;
-               font-size: 16px;
-               font-weight: bold;
-           }
-           QPushButton:hover {
-               background: #da190b;
-           }
-           QPushButton:disabled {
-               background: #cccccc;
-               color: #666666;
-           }
-       """)
+        self.stop_btn.setStyleSheet(STOP_BUTTON_STYLE)
         self.stop_btn.clicked.connect(self.stop_conversion)
         self.stop_btn.setEnabled(False)
         action_buttons.addWidget(self.stop_btn)
@@ -303,16 +247,7 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(logs_group)
 
-        # Результаты
-        results_group = QGroupBox("Результаты")
-        results_layout = QVBoxLayout(results_group)
-
-        self.results_text = QTextEdit()
-        self.results_text.setFont(QFont("Consolas", 9))
-        self.results_text.setMaximumHeight(150)
-        results_layout.addWidget(self.results_text)
-
-        layout.addWidget(results_group)
+        # Removed results widget
         return panel
 
     def create_settings_group(self) -> QGroupBox:
@@ -508,7 +443,6 @@ class MainWindow(QMainWindow):
         self.controller.clear_files()
         self.file_list.clear()
         self.progress_widget.reset()
-        self.results_text.clear()
         self.log_message("Список файлов очищен")
         self._update_auto_languages_display()
 
@@ -614,22 +548,9 @@ class MainWindow(QMainWindow):
             if result.success:
                 # Успешная конвертация
                 stats = result.stats
-                output_info = "\n".join([f"  📄 {f.name}" for f in result.output_files])
 
                 self.progress_widget.set_completion_status(True, "Excel конвертация завершена!")
 
-                result_text = f"""
-📊 Excel конвертация завершена:
-{output_info}
-
-📈 Статистика:
- • Экспортировано сегментов: {stats.get('exported_segments', 0):,}
- • Обработано листов: {stats.get('processed_sheets', 0)}
- • Время конвертации: {stats.get('conversion_time', 0):.1f}с
- • Скорость: {stats.get('segments_per_second', 0):,} сегментов/сек
- • Языки: {stats.get('source_language', 'N/A')} → {stats.get('target_language', 'N/A')}
-"""
-                self.results_text.append(result_text)
                 self.log_message(
                     f"✅ Excel конвертация завершена за {stats.get('conversion_time', 0):.1f}с! "
                     f"Экспортировано: {stats.get('exported_segments', 0)} сегментов")
@@ -719,8 +640,7 @@ class MainWindow(QMainWindow):
         self.add_files_btn.setEnabled(False)
         self.add_excel_btn.setEnabled(False)
 
-        # Очищаем предыдущие результаты
-        self.results_text.clear()
+        # Очищаем состояние виджетов
         self.progress_widget.reset()
         self.file_list.reset_all_status()
 
@@ -809,18 +729,12 @@ class MainWindow(QMainWindow):
             self.log_message(f"✅ Завершено: {filepath.name}")
 
             stats = result.stats
-            output_info = "\n".join([f"  📄 {f.name}" for f in result.output_files])
-            result_text = f"""
-📁 {filepath.name}:
-{output_info}
-📊 Статистика:
- • Экспортировано: {stats.get('exported', 0):,}
- • Всего в SDLTM: {stats.get('total_in_sdltm', stats.get('total', 0)):,}
- • Пропущено пустых: {stats.get('skipped_empty', 0):,}
- • Пропущено дублей: {stats.get('skipped_duplicates', 0):,}
- • Время: {stats.get('conversion_time', 0):.1f}с
-"""
-            self.results_text.append(result_text)
+            for out in result.output_files:
+                self.log_message(f"  📄 {out.name}")
+            self.log_message(
+                f"   Экспортировано: {stats.get('exported', 0)} | "
+                f"Всего: {stats.get('total_in_sdltm', stats.get('total', 0))} | "
+                f"Время: {stats.get('conversion_time', 0):.1f}с")
         else:
             error_msg = '; '.join(result.errors) if result.errors else "Неизвестная ошибка"
             self.log_message(f"❌ Ошибка: {filepath.name} - {error_msg}")
@@ -848,13 +762,12 @@ class MainWindow(QMainWindow):
         # Итоговое сообщение
         self.log_message(f"🎉 Конвертация завершена: {successful}/{total} успешно")
 
-        # Показываем диалог с результатами
+        # Показываем диалог с итогами
         if successful > 0:
             QMessageBox.information(
                 self,
                 "Конвертация завершена",
-                f"Успешно конвертировано: {successful} из {total} файлов\n\n"
-                f"Результаты смотрите в панели справа."
+                f"Успешно конвертировано: {successful} из {total} файлов"
             )
         else:
             QMessageBox.warning(
