@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QLabel, QTextEdit, QFileDialog, QMessageBox,
     QGroupBox, QCheckBox, QSplitter, QFrame, QLineEdit
 )
-from PySide6.QtCore import Qt, QThread, Signal, QTimer
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from gui.ui_constants import (
     HEADER_FRAME_STYLE,
@@ -31,6 +31,8 @@ class MainWindow(QMainWindow):
         # Создаем контроллер
         from controller import MainController
         self.controller = MainController()
+        from services import ConversionManager
+        self.manager = ConversionManager()
 
         self.setup_window()
         self.setup_ui()
@@ -40,9 +42,6 @@ class MainWindow(QMainWindow):
         # Состояние конвертации
         self.is_converting = False
         self.current_batch_results = []
-
-        # Excel конвертация
-        self.excel_workers = []  # Список активных Excel workers
 
         logger.info("Main window initialized with Excel support")
 
@@ -306,25 +305,14 @@ class MainWindow(QMainWindow):
         return group
 
     def setup_worker(self):
-        """Настраивает worker для конвертации"""
-        from workers.conversion_worker import BatchConversionWorker
-
-        # Создаем worker и поток
-        self.worker = BatchConversionWorker()
-        self.worker_thread = QThread()
-        self.worker.moveToThread(self.worker_thread)
-
-        # Подключение сигналов прогресса
-        self.worker.progress_changed.connect(self.on_progress_update)
-        self.worker.file_started.connect(self.on_file_started)
-        self.worker.file_completed.connect(self.on_file_completed)
-        self.worker.batch_completed.connect(self.on_batch_completed)
-        self.worker.error_occurred.connect(self.on_conversion_error)
-
-        # Запускаем поток
-        self.worker_thread.start()
-
-        logger.info("Worker thread started and signals connected")
+        """Connects conversion manager signals."""
+        self.manager.progress_changed.connect(self.on_progress_update)
+        self.manager.file_started.connect(self.on_file_started)
+        self.manager.file_completed.connect(self.on_file_completed)
+        self.manager.batch_completed.connect(self.on_batch_completed)
+        self.manager.error_occurred.connect(self.on_conversion_error)
+        self.manager.excel_conversion_finished.connect(self.on_excel_conversion_finished)
+        self.manager.excel_conversion_error.connect(self.on_excel_conversion_error)
 
     def setup_connections(self):
         """Настраивает дополнительные соединения сигналов"""
@@ -495,17 +483,7 @@ class MainWindow(QMainWindow):
             options.should_stop_callback = lambda: not self.is_converting
 
             # Создаем и запускаем Excel worker
-            from workers.excel_conversion_worker import ExcelConversionWorker
-
-            excel_worker = ExcelConversionWorker(filepath, settings, options)
-            excel_worker.finished.connect(self.on_excel_conversion_finished)
-            excel_worker.error.connect(self.on_excel_conversion_error)
-
-            # Сохраняем ссылку на worker
-            self.excel_workers.append(excel_worker)
-
-            # Запускаем
-            excel_worker.start()
+            self.manager.start_excel(filepath, settings, options)
 
             # Переключаем UI в режим конвертации
             self.is_converting = True
@@ -533,10 +511,6 @@ class MainWindow(QMainWindow):
     def on_excel_conversion_finished(self, result):
         """Обработчик завершения Excel конвертации"""
         try:
-            # Удаляем worker из списка
-            sender = self.sender()
-            if sender in self.excel_workers:
-                self.excel_workers.remove(sender)
 
             # Возвращаем UI в обычный режим
             self.is_converting = False
@@ -584,10 +558,6 @@ class MainWindow(QMainWindow):
     def on_excel_conversion_error(self, error_msg: str):
         """Обработчик ошибок Excel конвертации"""
         try:
-            # Удаляем worker из списка
-            sender = self.sender()
-            if sender in self.excel_workers:
-                self.excel_workers.remove(sender)
 
             # Возвращаем UI в обычный режим
             self.is_converting = False
@@ -645,7 +615,7 @@ class MainWindow(QMainWindow):
         self.file_list.reset_all_status()
 
         # Запускаем конвертацию через worker
-        self.worker.convert_batch(files, options)
+        self.manager.start_batch(files, options)
         self.log_message(f"🚀 Начата конвертация {len(files)} файлов")
 
     def stop_conversion(self):
@@ -653,11 +623,7 @@ class MainWindow(QMainWindow):
         self.is_converting = False
 
         # Останавливаем обычные workers
-        self.worker.stop_batch()
-
-        # Останавливаем Excel workers
-        for excel_worker in self.excel_workers:
-            excel_worker.stop()
+        self.manager.stop_all()
 
         self.log_message("🛑 Запрошена остановка всех конвертаций...")
 
@@ -825,15 +791,7 @@ class MainWindow(QMainWindow):
 
             self.stop_conversion()
 
-        # Останавливаем worker thread
-        if hasattr(self, 'worker_thread'):
-            self.worker_thread.quit()
-            self.worker_thread.wait(3000)  # Ждем до 3 секунд
-
-        # Останавливаем Excel workers
-        for excel_worker in self.excel_workers:
-            excel_worker.terminate()
-            excel_worker.wait(1000)
-
+        self.manager.shutdown()
         event.accept()
         logger.info("Main window closed")
+
