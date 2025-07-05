@@ -79,7 +79,8 @@ class MainWindow(QMainWindow):
 
     def changeEvent(self, event):
         """Обработчик изменения состояния окна"""
-        if event.type() == event.WindowStateChange:
+        from PySide6.QtCore import QEvent
+        if event.type() == QEvent.WindowStateChange:
             if self.windowState() & Qt.WindowMaximized:
                 # При максимизации используем доступную область экрана
                 from PySide6.QtWidgets import QApplication
