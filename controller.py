@@ -20,6 +20,8 @@ class MainController:
         # Состояние приложения
         self.files: List[Path] = []
         self.auto_detected_languages: Optional[Dict[str, str]] = None
+        self.auto_language_source: Optional[Path] = None
+        self.file_languages: Dict[Path, Dict[str, str]] = {}
 
     def add_files(self, filepaths: List[str]) -> List[Dict]:
         """
@@ -37,6 +39,11 @@ class MainController:
 
             # Получаем информацию о файле
             file_info = self.file_service.get_file_info(filepath)
+            languages = None
+            if filepath.suffix.lower() == '.sdltm':
+                languages = self.file_service.auto_detect_languages(filepath)
+                if languages:
+                    self.file_languages[filepath] = languages
 
             # Добавляем только поддерживаемые файлы
             if file_info['is_supported']:
@@ -48,7 +55,8 @@ class MainController:
                     'size_mb': file_info['size_mb'],
                     'format': file_info['format'],
                     'format_icon': file_info['format_icon'],
-                    'extra_info': file_info['extra_info']
+                    'extra_info': file_info['extra_info'],
+                    'languages': languages
                 })
 
         # Автоопределение языков из первого SDLTM файла
@@ -70,6 +78,8 @@ class MainController:
         """Очищает все файлы"""
         self.files.clear()
         self.auto_detected_languages = None
+        self.auto_language_source = None
+        self.file_languages.clear()
         logger.info("All files cleared")
 
     def get_file_count(self) -> int:
@@ -111,6 +121,19 @@ class MainController:
     def get_files_for_conversion(self) -> List[Path]:
         """Возвращает список файлов для конвертации"""
         return self.files.copy()
+
+    def get_file_languages(self, filepath: Path) -> Optional[Dict[str, str]]:
+        """Возвращает языки для конкретного файла"""
+        return self.file_languages.get(filepath)
+
+    def set_file_languages(self, filepath: Path, source: str, target: str):
+        """Устанавливает языки для конкретного файла"""
+        if filepath in self.files:
+            self.file_languages[filepath] = {'source': source, 'target': target}
+
+    def get_file_language_mapping(self) -> Dict[Path, Dict[str, str]]:
+        """Возвращает словарь языков для файлов"""
+        return self.file_languages.copy()
 
     def validate_conversion_request(self, gui_options: Dict) -> tuple[bool, str]:
         """
@@ -308,7 +331,8 @@ class MainController:
                 languages = self.file_service.auto_detect_languages(filepath)
                 if languages:
                     self.auto_detected_languages = languages
-                    logger.info(f"Auto-detected languages: {languages}")
+                    self.auto_language_source = filepath
+                    logger.info(f"Auto-detected languages from {filepath.name}: {languages}")
                     break
             elif self.is_excel_file(filepath):
                 # Для Excel файлов тоже можем попробовать определить языки
@@ -319,6 +343,7 @@ class MainController:
                             'source': analysis.detected_source_lang,
                             'target': analysis.detected_target_lang
                         }
+                        self.auto_language_source = filepath
                         logger.info(f"Auto-detected languages from Excel: {self.auto_detected_languages}")
                         break
                 except Exception:

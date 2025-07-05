@@ -48,7 +48,7 @@ class ConversionWorker(QObject):
         except ImportError as e:
             logger.warning(f"Failed to load SDLTM converter: {e}")
 
-    def convert_files(self, filepaths: List[Path], options):
+    def convert_files(self, filepaths: List[Path], options, file_languages=None):
         """ИСПРАВЛЕНО: Конвертация с динамическим прогрессом"""
         with QMutexLocker(self.mutex):
             self.should_stop = False
@@ -95,7 +95,7 @@ class ConversionWorker(QObject):
                 self._update_progress(base_progress, f"Обрабатывается: {filepath.name}")
 
                 # Создаем опции с колбэками
-                file_options = self._create_file_options(options, filepath, i)
+                file_options = self._create_file_options(options, filepath, i, file_languages)
 
                 # Конвертируем файл
                 try:
@@ -164,7 +164,7 @@ class ConversionWorker(QObject):
 
         return None
 
-    def _create_file_options(self, original_options, filepath: Path, file_index: int):
+    def _create_file_options(self, original_options, filepath: Path, file_index: int, file_languages=None):
         """ИСПРАВЛЕНО: Создает опции с прогресс-колбэками"""
         from core.base import ConversionOptions
 
@@ -184,12 +184,19 @@ class ConversionWorker(QObject):
             with QMutexLocker(self.mutex):
                 return self.should_stop
 
+        src_lang = original_options.source_lang
+        tgt_lang = original_options.target_lang
+        if file_languages and filepath in file_languages:
+            langs = file_languages[filepath]
+            src_lang = langs.get('source', src_lang)
+            tgt_lang = langs.get('target', tgt_lang)
+
         return ConversionOptions(
             export_tmx=original_options.export_tmx,
             export_xlsx=original_options.export_xlsx,
             export_json=getattr(original_options, 'export_json', False),
-            source_lang=original_options.source_lang,
-            target_lang=original_options.target_lang,
+            source_lang=src_lang,
+            target_lang=tgt_lang,
             batch_size=getattr(original_options, 'batch_size', 1000),
             progress_callback=file_progress_callback,
             should_stop_callback=should_stop_callback
@@ -250,7 +257,7 @@ class BatchConversionWorker(QObject):
         self.total_files = 0
         self.batch_start_time = None
 
-    def convert_batch(self, filepaths: List[Path], options):
+    def convert_batch(self, filepaths: List[Path], options, file_languages=None):
         """ИСПРАВЛЕНО: Запуск пакетной конвертации"""
         with QMutexLocker(self.mutex):
             self.current_file_index = 0
@@ -264,7 +271,7 @@ class BatchConversionWorker(QObject):
         self.progress_changed.emit(0, "Подготовка к конвертации...", 0, self.total_files)
 
         # Запускаем конвертацию
-        self.conversion_worker.convert_files(filepaths, options)
+        self.conversion_worker.convert_files(filepaths, options, file_languages)
 
     def stop_batch(self):
         """Остановка пакетной конвертации"""
