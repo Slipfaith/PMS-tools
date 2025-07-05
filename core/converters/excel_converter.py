@@ -1,11 +1,10 @@
-# core/converters/excel_converter.py - ИСПРАВЛЕННАЯ ВЕРСИЯ ДЛЯ БОЛЬШИХ ФАЙЛОВ
+# core/converters/excel_converter.py - СУПЕР ОПТИМИЗИРОВАННАЯ ВЕРСИЯ
 
 import openpyxl
 from pathlib import Path
 from typing import Iterator, Tuple, Dict, List, Optional, Set
 import logging
 import time
-import re
 
 from ..base import (
     StreamingConverter, ConversionResult, ConversionOptions, ConversionStatus,
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class ExcelConverter(StreamingConverter):
-    """Конвертер Excel в TMX с оптимизацией для больших файлов"""
+    """Супер быстрый конвертер Excel в TMX"""
 
     def __init__(self):
         super().__init__()
@@ -29,227 +28,233 @@ class ExcelConverter(StreamingConverter):
         return filepath.suffix.lower() in self.supported_formats
 
     def validate(self, filepath: Path) -> bool:
-        """БЫСТРАЯ валидация Excel файла"""
+        """Быстрая валидация Excel файла"""
         if not filepath.exists():
             raise ValidationError(f"File not found: {filepath}")
 
         if not filepath.is_file():
             raise ValidationError(f"Not a file: {filepath}")
 
-        # Проверяем размер файла
-        file_size_mb = filepath.stat().st_size / (1024 * 1024)
-        logger.info(f"Excel file size: {file_size_mb:.1f} MB")
-
         try:
-            # БЫСТРАЯ проверка - только открываем и сразу закрываем
+            # Минимальная проверка - только открываем и закрываем
             wb = openpyxl.load_workbook(str(filepath), read_only=True, data_only=True)
+            has_sheets = bool(wb.sheetnames)
+            wb.close()
 
-            if not wb.sheetnames:
-                wb.close()
+            if not has_sheets:
                 raise ValidationError(f"No sheets found in Excel file: {filepath}")
 
-            sheet_count = len(wb.sheetnames)
-            wb.close()  # СРАЗУ закрываем!
-
-            logger.info(f"Excel validation successful: {filepath} ({sheet_count} sheets)")
             return True
 
-        except openpyxl.utils.exceptions.InvalidFileException:
-            raise ValidationError(f"Invalid Excel file format: {filepath}")
         except Exception as e:
-            raise ValidationError(f"Error validating Excel file {filepath}: {e}")
+            raise ValidationError(f"Invalid Excel file: {e}")
 
     def analyze_excel_structure(self, filepath: Path) -> ExcelAnalysis:
-        """ОПТИМИЗИРОВАННЫЙ анализ структуры Excel файла"""
-        logger.info(f"Analyzing Excel structure: {filepath.name}")
+        """Супер быстрый анализ структуры"""
+        logger.info(f"Fast analyzing Excel: {filepath.name}")
 
-        try:
-            analysis = ExcelAnalysis(file_path=filepath)
+        analysis = ExcelAnalysis(file_path=filepath)
 
-            # ОПТИМИЗАЦИЯ: Открываем с минимальными настройками
-            wb = openpyxl.load_workbook(
-                str(filepath),
-                read_only=True,  # Только для чтения
-                data_only=True,  # Только значения, без формул
-                keep_vba=False  # Не загружаем VBA
-            )
+        wb = openpyxl.load_workbook(str(filepath), read_only=True, data_only=True)
 
-            logger.info(f"Excel opened, analyzing {len(wb.sheetnames)} sheets...")
+        for sheet_name in wb.sheetnames[:10]:  # Максимум 10 листов
+            ws = wb[sheet_name]
 
-            # Анализируем только первые несколько листов для больших файлов
-            sheets_to_analyze = wb.sheetnames[:10]  # Максимум 10 листов
+            # Быстрый анализ
+            sheet_info = SheetInfo(name=sheet_name)
 
-            for i, sheet_name in enumerate(sheets_to_analyze):
-                logger.info(f"Analyzing sheet {i + 1}/{len(sheets_to_analyze)}: {sheet_name}")
-
-                try:
-                    sheet = wb[sheet_name]
-                    sheet_info = self._analyze_sheet_fast(sheet, sheet_name)
-                    analysis.sheets.append(sheet_info)
-                except Exception as e:
-                    logger.warning(f"Error analyzing sheet '{sheet_name}': {e}")
-                    # Создаем базовую информацию о листе
-                    sheet_info = SheetInfo(
-                        name=sheet_name,
-                        data_rows=0,
-                        columns=[]
-                    )
-                    analysis.sheets.append(sheet_info)
-
-            wb.close()  # ОБЯЗАТЕЛЬНО закрываем
-
-            logger.info(f"Excel analysis completed: {len(analysis.sheets)} sheets analyzed")
-            return analysis
-
-        except Exception as e:
-            logger.error(f"Error analyzing Excel structure: {e}")
-            raise ExcelStructureError(f"Failed to analyze Excel file: {e}", filepath)
-
-    def _analyze_sheet_fast(self, sheet, sheet_name: str) -> SheetInfo:
-        """БЫСТРЫЙ анализ листа - только первые строки"""
-        logger.debug(f"Fast analyzing sheet: {sheet_name}")
-
-        info = SheetInfo(name=sheet_name)
-        info.header_row = 1
-
-        # ОПТИМИЗАЦИЯ: Читаем только первые 10 колонок и 100 строк
-        max_cols_to_check = min(10, sheet.max_column)
-        max_rows_to_check = min(100, sheet.max_row)
-
-        # Читаем заголовки из первой строки
-        headers = []
-        for col_idx in range(1, max_cols_to_check + 1):
-            try:
-                cell = sheet.cell(row=1, column=col_idx)
-                header = str(cell.value).strip() if cell.value else f"Column_{col_idx}"
-
-                if header and header != "None":
-                    col_info = ColumnInfo(
-                        index=col_idx - 1,
-                        name=header,
-                        detected_language=None,
+            # Читаем только первую строку для заголовков
+            headers = []
+            for col in range(1, min(ws.max_column + 1, 21)):  # Максимум 20 колонок
+                value = ws.cell(1, col).value
+                if value:
+                    headers.append(ColumnInfo(
+                        index=col - 1,
+                        name=str(value),
                         column_type=ColumnType.TEXT
-                    )
-                    headers.append(col_info)
-            except Exception as e:
-                logger.debug(f"Error reading header at col {col_idx}: {e}")
-                break
+                    ))
 
-        info.columns = headers
+            sheet_info.columns = headers
+            sheet_info.data_rows = ws.max_row - 1 if ws.max_row > 1 else 0
 
-        # БЫСТРЫЙ подсчет строк - проверяем только каждую 10-ю строку
-        data_rows = 0
-        for row_idx in range(2, max_rows_to_check + 1, 5):  # Каждые 5 строк
-            try:
-                has_data = False
-                for col_idx in range(1, min(5, sheet.max_column + 1)):  # Только первые 5 колонок
-                    cell = sheet.cell(row=row_idx, column=col_idx)
-                    if cell.value and str(cell.value).strip():
-                        has_data = True
-                        break
-                if has_data:
-                    data_rows += 5  # Приблизительно
-            except Exception:
-                break
+            analysis.sheets.append(sheet_info)
 
-        # Приблизительная оценка общего количества строк
-        if data_rows > 0:
-            estimated_total = int((sheet.max_row - 1) * (data_rows / max_rows_to_check))
-            info.data_rows = min(estimated_total, sheet.max_row - 1)
-        else:
-            info.data_rows = 0
-
-        logger.debug(f"Sheet '{sheet_name}': {len(info.columns)} columns, ~{info.data_rows} data rows (estimated)")
-        return info
+        wb.close()
+        return analysis
 
     def convert_excel_to_tmx(self, filepath: Path, settings: ExcelConversionSettings,
                              options: ConversionOptions) -> ConversionResult:
-        """ОПТИМИЗИРОВАННАЯ конвертация Excel в TMX"""
+        """СУПЕР БЫСТРАЯ конвертация Excel в TMX с поддержкой многих листов"""
         start_time = time.time()
 
         try:
-            self._update_progress(0, "Открываем Excel файл...", options)
+            self._update_progress(0, "Открываем Excel...", options)
 
-            # ОПТИМИЗАЦИЯ: Открываем с минимальными настройками
-            wb = openpyxl.load_workbook(
-                str(filepath),
-                read_only=True,
-                data_only=True,
-                keep_vba=False
-            )
+            # Используем iter_rows для максимальной скорости
+            wb = openpyxl.load_workbook(str(filepath), read_only=True, data_only=True)
 
             all_segments = []
-            processed_sheets = 0
             total_sheets = len(settings.selected_sheets)
 
-            for sheet_name in settings.selected_sheets:
+            logger.info(f"Processing {total_sheets} sheets: {settings.selected_sheets}")
+
+            for sheet_idx, sheet_name in enumerate(settings.selected_sheets):
                 if self._should_stop(options):
                     wb.close()
                     return self._create_cancelled_result()
-
-                processed_sheets += 1
-                base_progress = int((processed_sheets - 1) / total_sheets * 80)
-
-                self._update_progress(base_progress, f"Обрабатываем лист '{sheet_name}'...", options)
 
                 if sheet_name not in wb.sheetnames:
                     logger.warning(f"Sheet '{sheet_name}' not found in workbook")
                     continue
 
-                try:
-                    sheet = wb[sheet_name]
-                    column_mapping = settings.get_sheet_column_mapping(sheet_name)
+                ws = wb[sheet_name]
+                column_mapping = settings.get_sheet_column_mapping(sheet_name)
 
-                    # ПОТОКОВАЯ обработка листа
-                    sheet_segments = self._extract_segments_streaming(
-                        sheet, sheet_name, column_mapping, settings, options
-                    )
-                    all_segments.extend(sheet_segments)
-
-                except Exception as e:
-                    logger.error(f"Error processing sheet '{sheet_name}': {e}")
+                if not column_mapping:
+                    logger.warning(f"No column mapping for sheet '{sheet_name}'")
                     continue
+
+                # Находим нужные колонки
+                source_col_idx = None
+                target_col_idx = None
+                comment_col_indices = []
+
+                for col_info in column_mapping.values():
+                    if col_info.final_type == ColumnType.TEXT:
+                        if col_info.final_language == settings.source_language:
+                            source_col_idx = col_info.index
+                        elif col_info.final_language == settings.target_language:
+                            target_col_idx = col_info.index
+                    elif col_info.final_type == ColumnType.COMMENT:
+                        comment_col_indices.append(col_info.index)
+
+                # Автоопределение если не указано
+                if source_col_idx is None or target_col_idx is None:
+                    text_cols = [col for col in column_mapping.values()
+                                 if col.final_type == ColumnType.TEXT]
+                    if len(text_cols) >= 2:
+                        source_col_idx = text_cols[0].index
+                        target_col_idx = text_cols[1].index
+
+                if source_col_idx is None or target_col_idx is None:
+                    logger.error(f"Sheet '{sheet_name}': could not determine source/target columns")
+                    continue
+
+                logger.info(f"Sheet '{sheet_name}': source_col={source_col_idx}, target_col={target_col_idx}")
+
+                # СУПЕР БЫСТРОЕ чтение с iter_rows
+                row_count = 0
+                sheet_segments = []
+
+                # Обновляем прогресс для текущего листа
+                sheet_progress_base = int((sheet_idx / total_sheets) * 70)
+                self._update_progress(
+                    sheet_progress_base,
+                    f"Обрабатываем лист '{sheet_name}'...",
+                    options
+                )
+
+                # Читаем ВСЕ данные ОДНИМ проходом
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    row_count += 1
+
+                    # Быстрое извлечение значений
+                    try:
+                        source_text = str(row[source_col_idx] or '').strip()
+                        target_text = str(row[target_col_idx] or '').strip()
+
+                        if not source_text and not target_text:
+                            continue
+
+                        segment = TranslationSegment(
+                            source_text=source_text,
+                            target_text=target_text,
+                            source_lang=settings.source_language,
+                            target_lang=settings.target_language
+                        )
+
+                        # Комментарии только если нужно
+                        if settings.include_comments and comment_col_indices:
+                            for comment_idx in comment_col_indices:
+                                if comment_idx < len(row) and row[comment_idx]:
+                                    segment.add_comment(str(row[comment_idx]))
+
+                        sheet_segments.append(segment)
+
+                    except Exception as e:
+                        logger.debug(f"Error processing row {row_count}: {e}")
+                        continue
+
+                    # Обновляем прогресс каждые 1000 строк
+                    if row_count % 1000 == 0:
+                        sheet_progress = sheet_progress_base + int((row_count / ws.max_row) * (70 / total_sheets))
+                        self._update_progress(
+                            sheet_progress,
+                            f"Лист '{sheet_name}': {row_count} строк",
+                            options
+                        )
+
+                all_segments.extend(sheet_segments)
+                logger.info(f"Sheet '{sheet_name}': extracted {len(sheet_segments)} segments from {row_count} rows")
 
             wb.close()
 
-            self._update_progress(80, "Фильтруем и сохраняем...", options)
-            filtered_segments = self._filter_segments(all_segments, settings)
+            # Быстрая фильтрация дубликатов
+            self._update_progress(80, f"Обработка {len(all_segments)} сегментов...", options)
 
-            if not filtered_segments:
+            if settings.skip_empty_segments or True:  # Всегда фильтруем
+                seen = set()
+                unique_segments = []
+
+                for seg in all_segments:
+                    if not seg.source_text or not seg.target_text:
+                        continue
+
+                    key = (seg.source_text.lower(), seg.target_text.lower())
+                    if key not in seen:
+                        seen.add(key)
+                        unique_segments.append(seg)
+            else:
+                unique_segments = all_segments
+
+            if not unique_segments:
                 return ConversionResult(
                     success=False,
                     output_files=[],
-                    stats={"total_segments": len(all_segments), "exported_segments": 0},
-                    errors=["No valid segments found"],
+                    stats={
+                        "total": len(all_segments),
+                        "exported": 0,
+                        "processed_sheets": len([s for s in settings.selected_sheets if s in wb.sheetnames])
+                    },
+                    errors=["No valid segments found after filtering"],
                     status=ConversionStatus.FAILED
                 )
 
-            # Создаем TMX
+            # Быстрая запись TMX
+            self._update_progress(90, f"Сохраняем {len(unique_segments)} уникальных сегментов...", options)
+
             output_path = filepath.with_suffix('.tmx')
             tmx_segments = [
                 (seg.source_text, seg.target_text, seg.source_lang, seg.target_lang)
-                for seg in filtered_segments
+                for seg in unique_segments
             ]
 
-            # ПОТОКОВАЯ запись TMX для больших файлов
-            if len(tmx_segments) > 10000:
-                logger.info("Using streaming TMX write for large file")
-                TmxWriter.write_streaming(output_path, iter(tmx_segments),
-                                          settings.source_language, settings.target_language)
-            else:
-                TmxWriter.write(output_path, tmx_segments,
-                                settings.source_language, settings.target_language)
+            TmxWriter.write(output_path, tmx_segments,
+                            settings.source_language, settings.target_language)
 
+            elapsed = time.time() - start_time
             stats = {
                 "total_segments": len(all_segments),
-                "exported_segments": len(filtered_segments),
-                "processed_sheets": len(settings.selected_sheets),
-                "conversion_time": time.time() - start_time,
+                "exported_segments": len(unique_segments),
+                "duplicates_removed": len(all_segments) - len(unique_segments),
+                "processed_sheets": len([s for s in settings.selected_sheets if s in wb.sheetnames]),
+                "conversion_time": elapsed,
+                "segments_per_second": int(len(all_segments) / elapsed) if elapsed > 0 else 0,
                 "source_language": settings.source_language,
                 "target_language": settings.target_language
             }
 
-            self._update_progress(100, f"Готово! {len(filtered_segments)} сегментов", options)
+            self._update_progress(100, f"Готово за {elapsed:.1f} сек! {len(unique_segments)} сегментов", options)
 
             return ConversionResult(
                 success=True,
@@ -268,117 +273,6 @@ class ExcelConverter(StreamingConverter):
                 status=ConversionStatus.FAILED
             )
 
-    def _extract_segments_streaming(self, sheet, sheet_name: str, column_mapping: Dict[int, ColumnInfo],
-                                    settings: ExcelConversionSettings, options: ConversionOptions) -> List[
-        TranslationSegment]:
-        """ПОТОКОВОЕ извлечение сегментов порциями"""
-        segments = []
-
-        # Находим колонки
-        source_col = None
-        target_col = None
-        comment_cols = []
-
-        for col in column_mapping.values():
-            if col.final_type == ColumnType.TEXT:
-                if col.final_language == settings.source_language:
-                    source_col = col
-                elif col.final_language == settings.target_language:
-                    target_col = col
-            elif col.final_type == ColumnType.COMMENT:
-                comment_cols.append(col)
-
-        if not source_col or not target_col:
-            text_cols = [col for col in column_mapping.values() if col.final_type == ColumnType.TEXT]
-            if len(text_cols) >= 2:
-                source_col = text_cols[0]
-                target_col = text_cols[1]
-
-        if not source_col or not target_col:
-            logger.error(f"Sheet '{sheet_name}': source or target column not configured")
-            return segments
-
-        # ПОТОКОВАЯ обработка батчами по 1000 строк
-        batch_size = 1000
-        current_row = 2
-
-        while current_row <= sheet.max_row:
-            if self._should_stop(options):
-                break
-
-            end_row = min(current_row + batch_size - 1, sheet.max_row)
-
-            logger.debug(f"Processing rows {current_row}-{end_row}")
-
-            # Обрабатываем батч
-            for row_idx in range(current_row, end_row + 1):
-                try:
-                    source_cell = sheet.cell(row=row_idx, column=source_col.index + 1)
-                    target_cell = sheet.cell(row=row_idx, column=target_col.index + 1)
-
-                    source_text = str(source_cell.value).strip() if source_cell.value else ''
-                    target_text = str(target_cell.value).strip() if target_cell.value else ''
-
-                    if not source_text and not target_text:
-                        continue
-
-                    segment = TranslationSegment(
-                        source_text=source_text,
-                        target_text=target_text,
-                        source_lang=settings.source_language,
-                        target_lang=settings.target_language
-                    )
-
-                    # Добавляем комментарии
-                    for comment_col in comment_cols:
-                        try:
-                            comment_cell = sheet.cell(row=row_idx, column=comment_col.index + 1)
-                            comment_text = str(comment_cell.value).strip() if comment_cell.value else ''
-                            if comment_text:
-                                segment.add_comment(comment_text)
-                        except Exception:
-                            continue
-
-                    segments.append(segment)
-
-                except Exception as e:
-                    logger.debug(f"Error processing row {row_idx}: {e}")
-                    continue
-
-            current_row = end_row + 1
-
-            # Обновляем прогресс
-            progress = int((current_row / sheet.max_row) * 100)
-            if hasattr(options, 'progress_callback') and options.progress_callback:
-                try:
-                    options.progress_callback(progress, f"Обработано {current_row}/{sheet.max_row} строк")
-                except:
-                    pass
-
-        logger.info(f"Sheet '{sheet_name}': extracted {len(segments)} segments")
-        return segments
-
-    def _filter_segments(self, segments: List[TranslationSegment],
-                         settings: ExcelConversionSettings) -> List[TranslationSegment]:
-        """Фильтрует сегменты"""
-        filtered = []
-        seen_pairs = set()
-
-        for segment in segments:
-            if settings.skip_empty_segments and not segment.has_content():
-                continue
-
-            # Удаляем дубликаты
-            pair_key = (segment.source_text.lower().strip(), segment.target_text.lower().strip())
-            if pair_key in seen_pairs:
-                continue
-            seen_pairs.add(pair_key)
-
-            filtered.append(segment)
-
-        logger.info(f"Filtered segments: {len(segments)} -> {len(filtered)}")
-        return filtered
-
     def _create_cancelled_result(self) -> ConversionResult:
         """Создает результат для отмененной конвертации"""
         return ConversionResult(
@@ -389,7 +283,6 @@ class ExcelConverter(StreamingConverter):
             status=ConversionStatus.CANCELLED
         )
 
-    # Остальные методы остаются без изменений...
     def convert(self, filepath: Path, options: ConversionOptions) -> ConversionResult:
         """Основной метод конвертации"""
         try:
@@ -398,6 +291,7 @@ class ExcelConverter(StreamingConverter):
             if not analysis.sheets:
                 raise ConversionError("No sheets found in Excel file")
 
+            # Автоматические настройки
             settings = ExcelConversionSettings(
                 source_language="ru-RU",
                 target_language="en-US",
@@ -425,8 +319,8 @@ class ExcelConverter(StreamingConverter):
 
     def convert_streaming(self, filepath: Path, options: ConversionOptions) -> Iterator[Tuple[str, str, str, str]]:
         """Потоковая конвертация"""
-        return iter([])  # Заглушка
+        return iter([])
 
     def get_progress_steps(self, filepath: Path) -> int:
         """Возвращает примерное количество шагов"""
-        return 1000
+        return 100

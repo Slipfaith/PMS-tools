@@ -1,4 +1,4 @@
-# gui/widgets/file_list.py - ОБНОВЛЕННАЯ ВЕРСИЯ
+# gui/widgets/file_list.py - БЕЗ МИНИМАЛЬНЫХ РАЗМЕРОВ
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class FileListItem(QWidget):
-    """ОЧИЩЕНО: Виджет для отображения файла БЕЗ бизнес-логики"""
+    """Виджет для отображения файла"""
 
     remove_requested = Signal(Path)
 
@@ -26,19 +26,19 @@ class FileListItem(QWidget):
 
     def setup_ui(self):
         """Настройка интерфейса"""
-        # Основной макет с увеличенными отступами
+        # Основной макет с уменьшенными отступами
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(12, 10, 12, 10)
-        main_layout.setSpacing(8)
+        main_layout.setContentsMargins(8, 6, 8, 6)  # Уменьшены отступы
+        main_layout.setSpacing(4)  # Уменьшены промежутки
 
         # Верхняя строка - имя файла и кнопка удаления
         top_layout = QHBoxLayout()
-        top_layout.setSpacing(8)
+        top_layout.setSpacing(4)
 
         # Иконка формата
         self.format_icon = QLabel(self.file_info['format_icon'])
-        self.format_icon.setStyleSheet("font-size: 18px; margin-right: 4px;")
-        self.format_icon.setFixedSize(24, 24)
+        self.format_icon.setStyleSheet("font-size: 16px; margin-right: 2px;")
+        self.format_icon.setFixedSize(20, 20)
         self.format_icon.setAlignment(Qt.AlignCenter)
         top_layout.addWidget(self.format_icon)
 
@@ -47,10 +47,10 @@ class FileListItem(QWidget):
         self.name_label.setStyleSheet("""
             QLabel {
                 font-weight: bold;
-                font-size: 13px;
+                font-size: 12px;
                 color: #333;
                 margin: 0px;
-                padding: 2px;
+                padding: 1px;
             }
         """)
         self.name_label.setWordWrap(True)
@@ -61,13 +61,13 @@ class FileListItem(QWidget):
 
         # Кнопка удаления
         self.remove_btn = QPushButton("❌")
-        self.remove_btn.setFixedSize(28, 28)
+        self.remove_btn.setFixedSize(24, 24)
         self.remove_btn.setStyleSheet("""
             QPushButton {
                 border: none;
                 background: transparent;
-                font-size: 14px;
-                border-radius: 14px;
+                font-size: 12px;
+                border-radius: 12px;
                 padding: 0px;
             }
             QPushButton:hover {
@@ -83,7 +83,7 @@ class FileListItem(QWidget):
 
         main_layout.addLayout(top_layout)
 
-        # Информация о файле - ТЕПЕРЬ БЕРЕТСЯ ИЗ ПЕРЕДАННЫХ ДАННЫХ
+        # Информация о файле
         size_str = f"{self.file_info['size_mb']:.1f} MB" if self.file_info['size_mb'] > 0 else "< 1 MB"
         info_parts = [self.file_info['format'], size_str]
 
@@ -95,10 +95,10 @@ class FileListItem(QWidget):
         self.info_label = QLabel(info_text)
         self.info_label.setStyleSheet("""
             QLabel {
-                font-size: 11px;
+                font-size: 10px;
                 color: #666;
                 margin: 0px;
-                padding: 2px;
+                padding: 1px;
             }
         """)
         self.info_label.setWordWrap(True)
@@ -106,19 +106,19 @@ class FileListItem(QWidget):
 
         # Прогресс-бар (скрыт по умолчанию)
         self.progress_bar = QProgressBar()
-        self.progress_bar.setMaximumHeight(8)
-        self.progress_bar.setMinimumHeight(8)
+        self.progress_bar.setMaximumHeight(6)
+        self.progress_bar.setMinimumHeight(6)
         self.progress_bar.setVisible(False)
         self.progress_bar.setStyleSheet("""
             QProgressBar {
                 border: 1px solid #ddd;
-                border-radius: 4px;
+                border-radius: 3px;
                 background: #f0f0f0;
                 text-align: center;
             }
             QProgressBar::chunk {
                 background: #4CAF50;
-                border-radius: 3px;
+                border-radius: 2px;
             }
         """)
         main_layout.addWidget(self.progress_bar)
@@ -127,10 +127,10 @@ class FileListItem(QWidget):
         self.status_label = QLabel()
         self.status_label.setStyleSheet("""
             QLabel {
-                font-size: 10px;
+                font-size: 9px;
                 color: #999;
                 margin: 0px;
-                padding: 2px;
+                padding: 1px;
             }
         """)
         self.status_label.setVisible(False)
@@ -140,9 +140,9 @@ class FileListItem(QWidget):
         self.setStyleSheet("""
             FileListItem {
                 border: 1px solid #e0e0e0;
-                border-radius: 8px;
+                border-radius: 6px;
                 background: white;
-                margin: 2px;
+                margin: 1px;
             }
             FileListItem:hover {
                 border-color: #4CAF50;
@@ -150,9 +150,8 @@ class FileListItem(QWidget):
             }
         """)
 
-        # Устанавливаем минимальную высоту
-        self.setMinimumHeight(80)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # Убираем минимальную высоту
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
     def set_conversion_progress(self, progress: int, message: str = ""):
         """Устанавливает прогресс конвертации"""
@@ -169,10 +168,10 @@ class FileListItem(QWidget):
 
         if success:
             self.status_label.setText(f"✅ {message}" if message else "✅ Завершено")
-            self.status_label.setStyleSheet("color: #4CAF50; font-size: 10px; font-weight: bold;")
+            self.status_label.setStyleSheet("color: #4CAF50; font-size: 9px; font-weight: bold;")
         else:
             self.status_label.setText(f"❌ {message}" if message else "❌ Ошибка")
-            self.status_label.setStyleSheet("color: #f44336; font-size: 10px; font-weight: bold;")
+            self.status_label.setStyleSheet("color: #f44336; font-size: 9px; font-weight: bold;")
 
         self.status_label.setVisible(True)
 
@@ -181,12 +180,20 @@ class FileListItem(QWidget):
         self.progress_bar.setVisible(False)
         self.status_label.setVisible(False)
 
+    def sizeHint(self):
+        """Предпочтительный размер"""
+        return QSize(300, 60)  # Уменьшен размер
+
+    def minimumSizeHint(self):
+        """Минимальный размер"""
+        return QSize(150, 50)  # Минимальный размер
+
 
 class FileListWidget(QWidget):
-    """ОЧИЩЕНО: Виджет для отображения списка файлов БЕЗ бизнес-логики"""
+    """Виджет для отображения списка файлов"""
 
     files_changed = Signal(int)
-    file_remove_requested = Signal(Path)  # Проброс сигнала наверх
+    file_remove_requested = Signal(Path)
 
     def __init__(self):
         super().__init__()
@@ -197,19 +204,19 @@ class FileListWidget(QWidget):
         """Настройка интерфейса"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(4)
 
         # Заголовок
         header_layout = QHBoxLayout()
-        header_layout.setSpacing(8)
+        header_layout.setSpacing(4)
 
         self.title_label = QLabel("📁 Файлы для конвертации")
         self.title_label.setStyleSheet("""
             QLabel {
-                font-size: 14px;
+                font-size: 13px;
                 font-weight: bold;
                 color: #333;
-                padding: 8px;
+                padding: 4px;
                 margin: 0px;
             }
         """)
@@ -221,9 +228,9 @@ class FileListWidget(QWidget):
         self.count_label = QLabel("0 файлов")
         self.count_label.setStyleSheet("""
             QLabel {
-                font-size: 12px;
+                font-size: 11px;
                 color: #666;
-                padding: 8px;
+                padding: 4px;
                 margin: 0px;
             }
         """)
@@ -236,14 +243,14 @@ class FileListWidget(QWidget):
         self.list_widget.setStyleSheet("""
             QListWidget {
                 border: 1px solid #e0e0e0;
-                border-radius: 8px;
+                border-radius: 6px;
                 background: #fafafa;
-                padding: 4px;
+                padding: 2px;
             }
             QListWidget::item {
                 border: none;
                 padding: 0px;
-                margin: 2px;
+                margin: 1px;
                 background: transparent;
             }
             QListWidget::item:selected {
@@ -259,27 +266,30 @@ class FileListWidget(QWidget):
         self.list_widget.setSelectionMode(QListWidget.NoSelection)
         self.list_widget.setFocusPolicy(Qt.NoFocus)
 
+        # Убираем минимальный размер
+        self.list_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
         layout.addWidget(self.list_widget)
 
         # Кнопки управления
         buttons_layout = QHBoxLayout()
-        buttons_layout.setSpacing(8)
+        buttons_layout.setSpacing(4)
 
         self.clear_all_btn = QPushButton("Очистить все")
         self.clear_all_btn.setStyleSheet("""
             QPushButton {
-                padding: 6px 12px;
+                padding: 4px 8px;
                 border: 1px solid #ddd;
-                border-radius: 4px;
+                border-radius: 3px;
                 background: white;
                 color: #333;
+                font-size: 11px;
             }
             QPushButton:hover {
                 background: #f5f5f5;
                 border-color: #bbb;
             }
         """)
-        # Сигнал будет подключен в main_window
         buttons_layout.addWidget(self.clear_all_btn)
 
         buttons_layout.addStretch()
@@ -287,7 +297,7 @@ class FileListWidget(QWidget):
         layout.addLayout(buttons_layout)
 
     def update_files(self, files_info: List[Dict]):
-        """ОБНОВЛЕНО: Обновляет список файлов из готовых данных"""
+        """Обновляет список файлов"""
         # Получаем новые пути
         new_paths = {info['path'] for info in files_info}
         current_paths = set(self.file_items.keys())
@@ -305,22 +315,21 @@ class FileListWidget(QWidget):
         self.update_count()
 
     def add_file(self, file_info: Dict):
-        """ОБНОВЛЕНО: Добавляет файл из готовых данных"""
+        """Добавляет файл"""
         filepath = file_info['path']
 
         if filepath in self.file_items:
             return
 
-        # Создаем виджет для файла из готовых данных
+        # Создаем виджет для файла
         file_item = FileListItem(file_info)
-        file_item.remove_requested.connect(self.file_remove_requested.emit)  # Проброс сигнала
+        file_item.remove_requested.connect(self.file_remove_requested.emit)
 
         # Создаем элемент списка
         list_item = QListWidgetItem()
 
-        # Устанавливаем правильный размер
+        # Устанавливаем размер
         item_size = file_item.sizeHint()
-        item_size.setHeight(max(85, item_size.height()))
         list_item.setSizeHint(item_size)
 
         # Добавляем в список
@@ -390,3 +399,11 @@ class FileListWidget(QWidget):
         """Сбрасывает статус всех файлов"""
         for file_item in self.file_items.values():
             file_item.reset_status()
+
+    def sizeHint(self):
+        """Предпочтительный размер"""
+        return QSize(400, 300)
+
+    def minimumSizeHint(self):
+        """Минимальный размер"""
+        return QSize(200, 100)

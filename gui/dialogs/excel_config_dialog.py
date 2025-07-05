@@ -1,10 +1,10 @@
-# gui/dialogs/excel_config_dialog.py
+# gui/dialogs/excel_config_dialog.py - ИСПРАВЛЕННАЯ ВЕРСИЯ
 
 from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QTabWidget, QGroupBox,
     QLabel, QLineEdit, QCheckBox, QPushButton, QTableWidget,
     QTableWidgetItem, QHeaderView, QFormLayout, QMessageBox,
-    QComboBox, QWidget, QDialog
+    QComboBox, QWidget, QDialog, QAbstractItemView
 )
 from PySide6.QtCore import Qt
 from typing import Dict
@@ -28,8 +28,8 @@ class ExcelConfigDialog(QDialog):
     def setup_ui(self):
         """Настройка интерфейса"""
         self.setWindowTitle(f"Настройка Excel → TMX: {self.analysis.file_path.name}")
-        self.setMinimumSize(1000, 700)
-        self.resize(1200, 800)
+        # Убираем минимальный размер - окно можно сделать любого размера
+        self.resize(1000, 700)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
@@ -378,12 +378,19 @@ class ExcelSheetWidget(QWidget):
             "📋 Название колонки", "🔧 Тип", "🌐 Язык", "✅ Включить"
         ])
 
-        # Настройка заголовков таблицы
+        # ИСПРАВЛЕНО: Настройка размеров колонок
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)  # Название растягивается
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Тип по содержимому
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Язык по содержимому
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Чекбокс фиксированный
+        self.table.setColumnWidth(0, 250)  # Название колонки - фиксированная ширина
+        self.table.setColumnWidth(1, 200)  # Тип - фиксированная ширина
+        self.table.setColumnWidth(2, 150)  # Язык - фиксированная ширина
+        self.table.setColumnWidth(3, 100)  # Включить - фиксированная ширина
+
+        # Запрещаем изменение размера колонок пользователем
+        header.setSectionResizeMode(QHeaderView.Fixed)
+
+        # Настройка поведения таблицы
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setAlternatingRowColors(True)
 
         # Стиль таблицы
         self.table.setStyleSheet("""
@@ -392,6 +399,7 @@ class ExcelSheetWidget(QWidget):
                border: 1px solid #ddd;
                border-radius: 4px;
                background: white;
+               font-size: 12px;
            }
            QTableWidget::item {
                padding: 8px;
@@ -406,6 +414,17 @@ class ExcelSheetWidget(QWidget):
                border: none;
                border-right: 1px solid #ddd;
                font-weight: bold;
+               font-size: 12px;
+           }
+           QTableWidget QComboBox {
+               border: 1px solid #ddd;
+               padding: 4px;
+               margin: 2px;
+           }
+           QTableWidget QLineEdit {
+               border: 1px solid #ddd;
+               padding: 4px;
+               margin: 2px;
            }
        """)
 
@@ -475,36 +494,30 @@ class ExcelSheetWidget(QWidget):
                 "Игнорировать"
             ])
             type_combo.setCurrentText("Текст для перевода")
-            type_combo.setStyleSheet("""
-               QComboBox {
-                   padding: 4px;
-                   border: 1px solid #ddd;
-                   border-radius: 3px;
-               }
-           """)
+            type_combo.setMinimumWidth(180)
             self.table.setCellWidget(row, 1, type_combo)
 
             # Язык - простое поле ввода
             lang_edit = QLineEdit()
             lang_edit.setPlaceholderText("ru-RU, en-US, etc.")
-            lang_edit.setStyleSheet("""
-               QLineEdit {
-                   padding: 4px;
-                   border: 1px solid #ddd;
-                   border-radius: 3px;
-                   font-size: 11px;
-               }
-               QLineEdit:focus {
-                   border-color: #4CAF50;
-               }
-           """)
+            lang_edit.setMinimumWidth(130)
             self.table.setCellWidget(row, 2, lang_edit)
 
             # Включить колонку
             include_cb = QCheckBox()
             include_cb.setChecked(True)
-            include_cb.setStyleSheet("margin: 5px;")
-            self.table.setCellWidget(row, 3, include_cb)
+
+            # Центрируем чекбокс
+            checkbox_widget = QWidget()
+            checkbox_layout = QHBoxLayout(checkbox_widget)
+            checkbox_layout.addWidget(include_cb)
+            checkbox_layout.setAlignment(Qt.AlignCenter)
+            checkbox_layout.setContentsMargins(0, 0, 0, 0)
+
+            self.table.setCellWidget(row, 3, checkbox_widget)
+
+        # Устанавливаем высоту строк
+        self.table.verticalHeader().setDefaultSectionSize(40)
 
     def on_sheet_toggle(self, checked):
         """Обработчик переключения включения листа"""
@@ -526,8 +539,12 @@ class ExcelSheetWidget(QWidget):
                 else:
                     lang_edit.setText("en-US")
 
-                include_cb = self.table.cellWidget(row, 3)
-                include_cb.setChecked(True)
+                # Находим чекбокс внутри виджета
+                checkbox_widget = self.table.cellWidget(row, 3)
+                if checkbox_widget:
+                    include_cb = checkbox_widget.findChild(QCheckBox)
+                    if include_cb:
+                        include_cb.setChecked(True)
 
                 text_count += 1
             else:
@@ -535,8 +552,11 @@ class ExcelSheetWidget(QWidget):
                 type_combo = self.table.cellWidget(row, 1)
                 type_combo.setCurrentText("Игнорировать")
 
-                include_cb = self.table.cellWidget(row, 3)
-                include_cb.setChecked(False)
+                checkbox_widget = self.table.cellWidget(row, 3)
+                if checkbox_widget:
+                    include_cb = checkbox_widget.findChild(QCheckBox)
+                    if include_cb:
+                        include_cb.setChecked(False)
 
     def clear_column_settings(self):
         """Очищает настройки колонок"""
@@ -547,8 +567,11 @@ class ExcelSheetWidget(QWidget):
             lang_edit = self.table.cellWidget(row, 2)
             lang_edit.clear()
 
-            include_cb = self.table.cellWidget(row, 3)
-            include_cb.setChecked(True)
+            checkbox_widget = self.table.cellWidget(row, 3)
+            if checkbox_widget:
+                include_cb = checkbox_widget.findChild(QCheckBox)
+                if include_cb:
+                    include_cb.setChecked(True)
 
     def is_sheet_selected(self) -> bool:
         """Проверяет, выбран ли лист для конвертации"""
@@ -562,9 +585,12 @@ class ExcelSheetWidget(QWidget):
         mapping = {}
 
         for row in range(self.table.rowCount()):
-            include_cb = self.table.cellWidget(row, 3)
-            if not include_cb.isChecked():
-                continue
+            # Находим чекбокс внутри виджета
+            checkbox_widget = self.table.cellWidget(row, 3)
+            if checkbox_widget:
+                include_cb = checkbox_widget.findChild(QCheckBox)
+                if not include_cb or not include_cb.isChecked():
+                    continue
 
             type_combo = self.table.cellWidget(row, 1)
             lang_edit = self.table.cellWidget(row, 2)
