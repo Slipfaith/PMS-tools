@@ -24,6 +24,15 @@ class FileListItem(QWidget):
         self.file_info = file_info
         self.setup_ui()
 
+    def update_languages(self, languages: Dict[str, str]):
+        """Обновляет отображение языков"""
+        self.file_info['languages'] = languages
+        info_parts = self.info_label.text().split(' • ')
+        # remove existing language info if present
+        info_parts = [p for p in info_parts if '→' not in p]
+        info_parts.append(f"{languages['source']}→{languages['target']}")
+        self.info_label.setText(' • '.join(info_parts))
+
     def setup_ui(self):
         """Настройка интерфейса"""
         # Основной макет с уменьшенными отступами
@@ -89,6 +98,10 @@ class FileListItem(QWidget):
 
         if self.file_info['extra_info']:
             info_parts.append(self.file_info['extra_info'])
+
+        if self.file_info.get('languages'):
+            langs = self.file_info['languages']
+            info_parts.append(f"{langs['source']}→{langs['target']}")
 
         info_text = " • ".join(info_parts)
 
@@ -382,6 +395,12 @@ class FileListWidget(QWidget):
     def get_file_item(self, filepath: Path) -> FileListItem:
         """Возвращает виджет файла"""
         return self.file_items.get(filepath)
+
+    def set_file_languages(self, filepath: Path, languages: Dict[str, str]):
+        """Обновляет языки для файла"""
+        file_item = self.get_file_item(filepath)
+        if file_item:
+            file_item.update_languages(languages)
 
     def set_file_progress(self, filepath: Path, progress: int, message: str = ""):
         """Устанавливает прогресс для файла"""

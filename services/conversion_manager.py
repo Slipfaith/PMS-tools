@@ -39,9 +39,9 @@ class ConversionManager(QObject):
 
         self._excel_workers: List[ExcelConversionWorker] = []
 
-    def start_batch(self, files: List[Path], options):
+    def start_batch(self, files: List[Path], options, file_languages=None):
         """Start batch conversion."""
-        self._batch_worker.convert_batch(files, options)
+        self._batch_worker.convert_batch(files, options, file_languages)
 
     def stop_all(self):
         """Stop all running conversions."""

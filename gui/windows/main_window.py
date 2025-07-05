@@ -615,7 +615,7 @@ class MainWindow(QMainWindow):
         self.file_list.reset_all_status()
 
         # Запускаем конвертацию через worker
-        self.manager.start_batch(files, options)
+        self.manager.start_batch(files, options, self.controller.get_file_language_mapping())
         self.log_message(f"🚀 Начата конвертация {len(files)} файлов")
 
     def stop_conversion(self):
@@ -638,7 +638,8 @@ class MainWindow(QMainWindow):
                 'size_mb': file_info['size_mb'],
                 'format': file_info['format'],
                 'format_icon': file_info['format_icon'],
-                'extra_info': file_info['extra_info']
+                'extra_info': file_info['extra_info'],
+                'languages': self.controller.get_file_languages(filepath)
             })
 
         self.file_list.update_files(files_info)
@@ -646,9 +647,12 @@ class MainWindow(QMainWindow):
     def _update_auto_languages_display(self):
         """Обновляет отображение автоопределенных языков"""
         languages = self.controller.get_auto_detected_languages()
+        src_file = self.controller.auto_language_source
 
         if languages:
             lang_text = f"{languages['source']} → {languages['target']}"
+            if src_file:
+                lang_text += f" ({Path(src_file).name})"
             self.auto_langs_label.setText(lang_text)
             self.auto_langs_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
         else:
