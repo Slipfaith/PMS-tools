@@ -18,6 +18,10 @@ class ConversionManager(QObject):
     batch_completed = Signal(list)
     error_occurred = Signal(str)
 
+    # Internal signals to execute worker methods in its thread
+    _start_batch = Signal(list, object, object)
+    _stop_batch = Signal()
+
     excel_conversion_finished = Signal(object)
     excel_conversion_error = Signal(str)
 
@@ -27,6 +31,10 @@ class ConversionManager(QObject):
         self._batch_worker = BatchConversionWorker()
         self._thread = QThread()
         self._batch_worker.moveToThread(self._thread)
+
+        # connect internal signals to run in worker thread
+        self._start_batch.connect(self._batch_worker.convert_batch)
+        self._stop_batch.connect(self._batch_worker.stop_batch)
 
         # re-emit signals
         self._batch_worker.progress_changed.connect(self.progress_changed)
@@ -41,11 +49,12 @@ class ConversionManager(QObject):
 
     def start_batch(self, files: List[Path], options, file_languages=None):
         """Start batch conversion."""
-        self._batch_worker.convert_batch(files, options, file_languages)
+        # Invoke conversion in the worker thread
+        self._start_batch.emit(files, options, file_languages)
 
     def stop_all(self):
         """Stop all running conversions."""
-        self._batch_worker.stop_batch()
+        self._stop_batch.emit()
         for worker in list(self._excel_workers):
             worker.stop()
 
