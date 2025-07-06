@@ -517,7 +517,7 @@ class ExcelSheetWidget(QWidget):
             self.table.setCellWidget(row, 3, checkbox_widget)
 
         # Устанавливаем высоту строк
-        self.table.verticalHeader().setDefaultSectionSize(40)
+        self.table.verticalHeader().setDefaultSectionSize(52)
 
     def on_sheet_toggle(self, checked):
         """Обработчик переключения включения листа"""
