@@ -8,6 +8,8 @@ def test_is_supported():
     tmp = tempfile.NamedTemporaryFile(suffix=".sdltm")
     assert service.is_supported(Path(tmp.name))
     assert not service.is_supported(Path(tmp.name + "x"))
+    xml_tmp = tempfile.NamedTemporaryFile(suffix=".xml")
+    assert service.is_supported(Path(xml_tmp.name))
 
 
 def test_get_format_name_and_icon():
