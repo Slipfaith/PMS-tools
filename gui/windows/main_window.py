@@ -584,16 +584,6 @@ class MainWindow(QMainWindow):
                     f"✅ Excel конвертация завершена за {stats.get('conversion_time', 0):.1f}с! "
                     f"Экспортировано: {stats.get('exported_segments', 0)} сегментов")
 
-                # Показываем уведомление
-                QMessageBox.information(
-                    self,
-                    "Конвертация завершена",
-                    f"Excel файл успешно конвертирован!\n\n"
-                    f"Экспортировано: {stats.get('exported_segments', 0)} сегментов\n"
-                    f"Время: {stats.get('conversion_time', 0):.1f} секунд\n"
-                    f"Результаты сохранены в папке с исходным файлом."
-                )
-
             else:
                 # Ошибка конвертации
                 self.progress_widget.set_completion_status(False, "Ошибка Excel конвертации")
@@ -644,7 +634,6 @@ class MainWindow(QMainWindow):
         if success:
             self.progress_widget.set_completion_status(True, "TB конвертация завершена!")
             self.log_message(f"✅ {message}")
-            QMessageBox.information(self, "Конвертация завершена", message)
         else:
             self.progress_widget.set_completion_status(False, "Ошибка TB конвертации")
             self.log_message(f"❌ {message}")
@@ -806,14 +795,8 @@ class MainWindow(QMainWindow):
         # Итоговое сообщение
         self.log_message(f"🎉 Конвертация завершена: {successful}/{total} успешно")
 
-        # Показываем диалог с итогами
-        if successful > 0:
-            QMessageBox.information(
-                self,
-                "Конвертация завершена",
-                f"Успешно конвертировано: {successful} из {total} файлов"
-            )
-        else:
+        # Показываем диалог с итогами только при ошибке
+        if successful == 0:
             QMessageBox.warning(
                 self,
                 "Конвертация не удалась",

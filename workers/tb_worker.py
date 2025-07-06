@@ -22,7 +22,8 @@ def parse_multiterm_xml(xml_path: Path):
             lang_el = lang_grp.find("language")
             lang_code = lang_el.attrib.get("lang") or lang_el.attrib.get("type")
             if lang_code:
-                all_langs.add(lang_code)
+                norm = langcodes.standardize_tag(lang_code).lower()
+                all_langs.add(norm)
     langs = sorted(all_langs)
 
     rows = []
@@ -35,7 +36,8 @@ def parse_multiterm_xml(xml_path: Path):
                 continue
             term_elems = lang_grp.findall("termGrp/term")
             terms = [t.text or "" for t in term_elems] if term_elems else [""]
-            row[lang_code] = terms[0]
+            norm = langcodes.standardize_tag(lang_code).lower()
+            row[norm] = terms[0]
         rows.append(row)
     return langs, rows
 
@@ -58,9 +60,11 @@ def export_tmx(rows, src_code, tgt_code, src_norm, tgt_norm, out_path: Path):
         },
     )
     body = SubElement(tmx, "body")
+    src_key = langcodes.standardize_tag(src_code).lower()
+    tgt_key = langcodes.standardize_tag(tgt_code).lower()
     for row in rows:
-        src = row.get(src_code, "").strip()
-        tgt = row.get(tgt_code, "").strip()
+        src = row.get(src_key, "").strip()
+        tgt = row.get(tgt_key, "").strip()
         if not src or not tgt:
             continue
         tu = SubElement(body, "tu")
@@ -74,13 +78,16 @@ def export_tmx(rows, src_code, tgt_code, src_norm, tgt_norm, out_path: Path):
         f.write(pretty)
 
 
-def export_xlsx(rows, langs: List[str], out_path: Path):
+def export_xlsx(rows, langs: List[str], src_code: str, out_path: Path):
     import pandas as pd
+
+    src_key = langcodes.standardize_tag(src_code).lower()
+    ordered = [src_key] + [l for l in langs if l != src_key]
 
     data = []
     for row in rows:
-        data.append({lang: row.get(lang, "") for lang in langs})
-    df = pd.DataFrame(data, columns=langs)
+        data.append({lang: row.get(lang, "") for lang in ordered})
+    df = pd.DataFrame(data, columns=ordered)
     df.to_excel(out_path, index=False)
 
 
@@ -125,11 +132,13 @@ class TbWorker(QThread):
                 out_name = f"{Path(self.xml_path).stem}_terms.xlsx"
                 out_dir = self.output_dir or str(Path(self.xml_path).parent)
                 out_path = Path(out_dir) / out_name
-                export_xlsx(rows, langs, out_path)
+                export_xlsx(rows, langs, src_code, out_path)
                 self.log_written.emit(f"XLSX: {out_path}")
                 log_export(f"XLSX saved: {out_path}")
-            log_info(f"TbWorker finished: {exported} files")
-            self.finished.emit(True, f"Готово! Всего файлов: {exported}")
+
+            total_files = exported + (1 if self.export_xlsx else 0)
+            log_info(f"TbWorker finished: {total_files} files")
+            self.finished.emit(True, f"Готово! Всего файлов: {total_files}")
         except Exception as e:
             log_error(f"TbWorker error: {e}")
             self.finished.emit(False, f"Ошибка: {e}")
