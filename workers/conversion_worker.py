@@ -246,6 +246,11 @@ class ConversionWorker(QObject):
         with QMutexLocker(self.mutex):
             self.current_progress = progress
             self.current_message = message
+            emit_progress = progress
+            emit_message = message
+
+        # Мгновенно отправляем обновление, чтобы индикатор не зависал
+        self.progress_changed.emit(emit_progress, emit_message)
 
     def _emit_progress_update(self):
         """Эмитит обновление прогресса"""
