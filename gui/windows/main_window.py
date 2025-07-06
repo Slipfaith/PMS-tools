@@ -450,7 +450,7 @@ class MainWindow(QMainWindow):
 
     def open_sdxliff_window(self):
         """Открывает окно split/merge SDXLIFF"""
-        from gui.windows.sdxliff_split_window import SdxliffSplitWindow
+        from gui.dialogs import SdxliffToolsDialog
 
         files = self.controller.get_sdxliff_files()
         if not files:
@@ -459,7 +459,7 @@ class MainWindow(QMainWindow):
             )
             return
         if not hasattr(self, "_sdxliff_window") or self._sdxliff_window is None:
-            self._sdxliff_window = SdxliffSplitWindow(self.controller, files, self)
+            self._sdxliff_window = SdxliffToolsDialog(self.controller, files, self)
         else:
             self._sdxliff_window.set_files(files)
         self._sdxliff_window.show()
