@@ -162,6 +162,10 @@ class MainController:
         """Проверяет, является ли файл Excel"""
         return filepath.suffix.lower() in ['.xlsx', '.xls']
 
+    def is_termbase_file(self, filepath: Path) -> bool:
+        """Проверяет, является ли файл терминологической базой"""
+        return filepath.suffix.lower() in ['.xml', '.mtf', '.tbx']
+
     def analyze_excel_file(self, filepath: Path):
         """Анализирует Excel файл для настройки конвертации"""
         try:
@@ -215,6 +219,30 @@ class MainController:
             )
             return None
 
+    def show_termbase_config_dialog(self, filepath: Path, parent_widget):
+        """Диалог настройки конвертации терминологической базы"""
+        try:
+            from utils.term_base import extract_tb_info
+            info = extract_tb_info(filepath)
+
+            from gui.dialogs.termbase_config_dialog import TermbaseConfigDialog
+            from PySide6.QtWidgets import QDialog
+
+            dialog = TermbaseConfigDialog(filepath, info.get("languages", []), parent_widget)
+
+            if dialog.exec() == QDialog.Accepted:
+                return dialog.get_settings()
+            return None
+        except Exception as e:
+            logger.error(f"Error in termbase config dialog for {filepath}: {e}")
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                parent_widget,
+                "Ошибка анализа Termbase",
+                f"Не удалось прочитать файл:\n\n{e}"
+            )
+            return None
+
     def convert_excel_file(self, filepath: Path, settings, options):
         """Конвертирует Excel файл с заданными настройками"""
         try:
@@ -231,6 +259,18 @@ class MainController:
             logger.error(f"Error converting Excel file {filepath}: {e}")
             raise
 
+    def convert_termbase_file(self, filepath: Path, options):
+        """Конвертирует терминологическую базу"""
+        try:
+            from core.converters.termbase_converter import TermBaseConverter
+
+            converter = TermBaseConverter()
+            return converter.convert(filepath, options)
+
+        except Exception as e:
+            logger.error(f"Error converting termbase {filepath}: {e}")
+            raise
+
     def prepare_excel_conversion_options(self, settings) -> 'ConversionOptions':
         """Создает опции конвертации для Excel"""
         from core.base import ConversionOptions
@@ -242,6 +282,19 @@ class MainController:
             source_lang=settings.source_language,
             target_lang=settings.target_language,
             batch_size=1000
+        )
+
+    def prepare_termbase_conversion_options(self, settings) -> 'ConversionOptions':
+        """Создает опции конвертации для терминологической базы"""
+        from core.base import ConversionOptions
+
+        return ConversionOptions(
+            export_tmx=settings.export_tmx,
+            export_xlsx=settings.export_xlsx,
+            export_json=False,
+            source_lang=settings.source_language,
+            target_lang='',
+            batch_size=1000,
         )
 
     def validate_excel_conversion_settings(self, settings) -> tuple[bool, str]:
@@ -281,6 +334,23 @@ class MainController:
 
         except Exception as e:
             logger.error(f"Error validating Excel settings: {e}")
+            return False, f"Ошибка валидации: {e}"
+
+    def validate_termbase_conversion_settings(self, settings) -> tuple[bool, str]:
+        """Проверяет настройки конвертации терминологической базы"""
+        try:
+            if not settings:
+                return False, "Настройки не указаны"
+
+            if not settings.source_language:
+                return False, "Не выбран исходный язык"
+
+            if not settings.export_tmx and not settings.export_xlsx:
+                return False, "Нужно выбрать хотя бы один формат экспорта"
+
+            return True, "OK"
+        except Exception as e:
+            logger.error(f"Error validating termbase settings: {e}")
             return False, f"Ошибка валидации: {e}"
 
     def get_excel_file_info(self, filepath: Path) -> Dict:

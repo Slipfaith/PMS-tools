@@ -10,6 +10,8 @@ def test_is_supported():
     assert not service.is_supported(Path(tmp.name + "x"))
     xml_tmp = tempfile.NamedTemporaryFile(suffix=".xml")
     assert service.is_supported(Path(xml_tmp.name))
+    tbx_tmp = tempfile.NamedTemporaryFile(suffix=".tbx")
+    assert service.is_supported(Path(tbx_tmp.name))
 
 
 def test_get_format_name_and_icon():
