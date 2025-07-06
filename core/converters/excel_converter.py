@@ -98,6 +98,17 @@ class ExcelConverter(StreamingConverter):
 
             logger.info(f"Processing {total_sheets} sheets: {settings.selected_sheets}")
 
+            sheet_rows = {}
+            total_rows = 0
+            for name in settings.selected_sheets:
+                if name in wb.sheetnames:
+                    ws_temp = wb[name]
+                    rows = max(ws_temp.max_row - 1, 0)
+                    sheet_rows[name] = rows
+                    total_rows += rows
+
+            processed_rows = 0
+
             for sheet_idx, sheet_name in enumerate(settings.selected_sheets):
                 if self._should_stop(options):
                     wb.close()
@@ -146,10 +157,8 @@ class ExcelConverter(StreamingConverter):
                 row_count = 0
                 sheet_segments = []
 
-                # Обновляем прогресс для текущего листа
-                sheet_progress_base = int((sheet_idx / total_sheets) * 70)
                 self._update_progress(
-                    sheet_progress_base,
+                    int((processed_rows / total_rows) * 80) if total_rows else 0,
                     f"Обрабатываем лист '{sheet_name}'...",
                     options
                 )
@@ -185,14 +194,21 @@ class ExcelConverter(StreamingConverter):
                         logger.debug(f"Error processing row {row_count}: {e}")
                         continue
 
-                    # Обновляем прогресс каждые 1000 строк
-                    if row_count % 1000 == 0:
-                        sheet_progress = sheet_progress_base + int((row_count / ws.max_row) * (70 / total_sheets))
+                    processed_rows += 1
+                    if processed_rows % 1000 == 0:
+                        progress_val = int((processed_rows / total_rows) * 80) if total_rows else 0
                         self._update_progress(
-                            sheet_progress,
-                            f"Лист '{sheet_name}': {row_count} строк",
+                            progress_val,
+                            f"Лист '{sheet_name}': {processed_rows} строк",
                             options
                         )
+
+                # Финальное обновление прогресса для листа
+                self._update_progress(
+                    int((processed_rows / total_rows) * 80) if total_rows else 0,
+                    f"Лист '{sheet_name}' обработан",
+                    options
+                )
 
                 all_segments.extend(sheet_segments)
                 logger.info(f"Sheet '{sheet_name}': extracted {len(sheet_segments)} segments from {row_count} rows")
