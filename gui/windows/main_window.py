@@ -173,6 +173,11 @@ class MainWindow(QMainWindow):
         self.add_excel_btn.clicked.connect(self.open_excel_dialog)
         file_buttons.addWidget(self.add_excel_btn)
 
+        # Кнопка для работы с SDXLIFF split/merge
+        self.sdxliff_btn = QPushButton("🪄 Split/Merge SDXLIFF")
+        self.sdxliff_btn.clicked.connect(self.open_sdxliff_window)
+        file_buttons.addWidget(self.sdxliff_btn)
+
         self.clear_files_btn = QPushButton("Очистить")
         self.clear_files_btn.clicked.connect(self.clear_files)
         file_buttons.addWidget(self.clear_files_btn)
@@ -411,6 +416,13 @@ class MainWindow(QMainWindow):
         if files:
             for excel_file in files:
                 self.handle_excel_file(Path(excel_file))
+
+    def open_sdxliff_window(self):
+        """Открывает окно split/merge SDXLIFF"""
+        from gui.windows.sdxliff_split_window import SdxliffSplitWindow
+        if not hasattr(self, "_sdxliff_window") or self._sdxliff_window is None:
+            self._sdxliff_window = SdxliffSplitWindow(self.controller, self)
+        self._sdxliff_window.show()
 
     def clear_files(self):
         """Очищает список файлов"""
