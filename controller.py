@@ -1,7 +1,7 @@
 # controller.py - НОВЫЙ ФАЙЛ
 
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict
 import logging
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,6 @@ class MainController:
 
         # Состояние приложения
         self.files: List[Path] = []
-        self.auto_detected_languages: Optional[Dict[str, str]] = None
 
     def add_files(self, filepaths: List[str]) -> List[Dict]:
         """
@@ -51,9 +50,6 @@ class MainController:
                     'extra_info': file_info['extra_info']
                 })
 
-        # Автоопределение языков из первого SDLTM файла
-        if new_files:
-            self._auto_detect_languages_from_files(new_files)
 
         logger.info(f"Added {len(files_info)} files")
         return files_info
@@ -69,7 +65,6 @@ class MainController:
     def clear_files(self):
         """Очищает все файлы"""
         self.files.clear()
-        self.auto_detected_languages = None
         logger.info("All files cleared")
 
     def get_file_count(self) -> int:
@@ -80,31 +75,21 @@ class MainController:
         """Определяет формат перетаскиваемых файлов"""
         return self.file_service.detect_files_format(filepaths)
 
-    def get_auto_detected_languages(self) -> Optional[Dict[str, str]]:
-        """Возвращает автоопределенные языки"""
-        return self.auto_detected_languages
-
     def prepare_conversion_options(self, gui_options: Dict) -> 'ConversionOptions':
         """
         Создает опции конвертации из данных GUI
         """
         from core.base import ConversionOptions
 
-        # Используем языки из GUI или автоопределенные
-        src_lang = gui_options.get('source_lang', '').strip()
-        tgt_lang = gui_options.get('target_lang', '').strip()
-
-        if not src_lang and self.auto_detected_languages:
-            src_lang = self.auto_detected_languages.get('source', 'auto')
-        if not tgt_lang and self.auto_detected_languages:
-            tgt_lang = self.auto_detected_languages.get('target', 'auto')
+        src_lang = gui_options.get('source_lang', '').strip() or 'auto'
+        tgt_lang = gui_options.get('target_lang', '').strip() or 'auto'
 
         return ConversionOptions(
             export_tmx=gui_options.get('export_tmx', True),
             export_xlsx=gui_options.get('export_xlsx', False),
             export_json=gui_options.get('export_json', False),
-            source_lang=src_lang or 'auto',
-            target_lang=tgt_lang or 'auto',
+            source_lang=src_lang,
+            target_lang=tgt_lang,
             batch_size=1000
         )
 
@@ -130,17 +115,3 @@ class MainController:
             return False, "Выберите хотя бы один формат экспорта"
 
         return True, "OK"
-
-    def _auto_detect_languages_from_files(self, new_files: List[Path]):
-        """Автоопределение языков из новых файлов"""
-        if self.auto_detected_languages:
-            return  # Уже определены
-
-        # Ищем первый SDLTM файл
-        for filepath in new_files:
-            if filepath.suffix.lower() == '.sdltm':
-                languages = self.file_service.auto_detect_languages(filepath)
-                if languages:
-                    self.auto_detected_languages = languages
-                    logger.info(f"Auto-detected languages: {languages}")
-                    break

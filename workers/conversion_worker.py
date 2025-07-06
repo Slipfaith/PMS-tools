@@ -184,13 +184,25 @@ class ConversionWorker(QObject):
             with QMutexLocker(self.mutex):
                 return self.should_stop
 
+        src_lang = original_options.source_lang
+        tgt_lang = original_options.target_lang
+
+        if hasattr(original_options, 'file_languages') and original_options.file_languages:
+            lang_pair = original_options.file_languages.get(filepath)
+            if lang_pair:
+                if lang_pair[0]:
+                    src_lang = lang_pair[0]
+                if lang_pair[1]:
+                    tgt_lang = lang_pair[1]
+
         return ConversionOptions(
             export_tmx=original_options.export_tmx,
             export_xlsx=original_options.export_xlsx,
             export_json=getattr(original_options, 'export_json', False),
-            source_lang=original_options.source_lang,
-            target_lang=original_options.target_lang,
+            source_lang=src_lang,
+            target_lang=tgt_lang,
             batch_size=getattr(original_options, 'batch_size', 1000),
+            file_languages=None,
             progress_callback=file_progress_callback,
             should_stop_callback=should_stop_callback
         )
