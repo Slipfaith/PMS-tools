@@ -29,19 +29,6 @@ class SmartDropArea(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)  # Уменьшены отступы
         layout.setSpacing(5)  # Уменьшены промежутки
 
-        # Иконка
-        self.icon_label = QLabel("📁")
-        self.icon_label.setAlignment(Qt.AlignCenter)
-        self.icon_label.setStyleSheet("""
-            QLabel {
-                font-size: 36px;
-                color: #666;
-                background: transparent;
-                margin: 0px;
-            }
-        """)
-        layout.addWidget(self.icon_label)
-
         # Основной текст
         self.main_label = QLabel("Перетащите файлы сюда")
         self.main_label.setAlignment(Qt.AlignCenter)
@@ -128,14 +115,6 @@ class SmartDropArea(QWidget):
                 min-height: 100px;
             }
         """)
-        self.icon_label.setStyleSheet("""
-            QLabel {
-                font-size: 40px;
-                color: #4CAF50;
-                background: transparent;
-                margin: 0px;
-            }
-        """)
 
     def update_style_error(self):
         """Стиль при ошибке"""
@@ -145,14 +124,6 @@ class SmartDropArea(QWidget):
                 border-radius: 8px;
                 background-color: #fff0f0;
                 min-height: 100px;
-            }
-        """)
-        self.icon_label.setStyleSheet("""
-            QLabel {
-                font-size: 40px;
-                color: #f44336;
-                background: transparent;
-                margin: 0px;
             }
         """)
 
@@ -186,14 +157,6 @@ class SmartDropArea(QWidget):
         self.detected_format = ""
         self.format_label.setText("")
         self.update_style_normal()
-        self.icon_label.setStyleSheet("""
-            QLabel {
-                font-size: 36px;
-                color: #666;
-                background: transparent;
-                margin: 0px;
-            }
-        """)
 
     def dropEvent(self, event: QDropEvent):
         """Обработчик сброса файлов"""
