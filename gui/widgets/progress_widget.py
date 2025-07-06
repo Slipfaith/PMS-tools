@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QProgressBar,
-    QLabel, QGroupBox
+    QLabel, QGroupBox, QSizePolicy
 )
 from PySide6.QtCore import Signal, Qt, QTimer, QPropertyAnimation, QEasingCurve, QMutex, QMutexLocker
 from PySide6.QtGui import QFont
@@ -65,6 +65,8 @@ class ProgressWidget(QWidget):
         # Текущий статус
         self.status_label = QLabel("Готов к работе")
         self.status_label.setStyleSheet(STATUS_LABEL_STYLE)
+        self.status_label.setWordWrap(True)
+        self.status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         info_layout.addWidget(self.status_label)
 
         info_layout.addStretch()
