@@ -15,6 +15,7 @@ class FileService:
     def __init__(self):
         self.supported_formats = {
             '.sdltm': 'SDL Trados Memory',
+            '.sdxliff': 'SDXLIFF File',
             '.xlsx': 'Excel Workbook',
             '.xls': 'Excel Workbook',
             '.tmx': 'TMX Memory',
@@ -36,10 +37,13 @@ class FileService:
             }
 
             # Дополнительная информация в зависимости от формата
-            if filepath.suffix.lower() == '.sdltm':
+            suffix = filepath.suffix.lower()
+            if suffix == '.sdltm':
                 info['extra_info'] = self._get_sdltm_info(filepath)
-            elif filepath.suffix.lower() in ['.xlsx', '.xls']:
+            elif suffix in ['.xlsx', '.xls']:
                 info['extra_info'] = self._get_excel_info(filepath)
+            elif suffix == '.sdxliff':
+                info['extra_info'] = self.get_sdxliff_info(filepath)
 
             return info
 
@@ -68,6 +72,7 @@ class FileService:
         suffix = filepath.suffix.lower()
         icons = {
             '.sdltm': '🗄️',
+            '.sdxliff': '📄',
             '.xlsx': '📊',
             '.xls': '📊',
             '.tmx': '🔄',
@@ -150,6 +155,22 @@ class FileService:
                 cursor.execute("SELECT COUNT(*) FROM translation_units")
                 count = cursor.fetchone()[0]
                 return f"{count:,} сегментов"
+        except Exception:
+            return "Недоступно"
+
+    def get_sdxliff_info(self, filepath: Path) -> str:
+        """Возвращает краткую информацию о SDXLIFF файле"""
+        try:
+            from lxml import etree
+            from core.splitters.sdxliff_splitter import count_words
+            tree = etree.parse(str(filepath))
+            units = tree.findall(".//{*}trans-unit")
+            words = 0
+            for u in units:
+                src = u.find(".//{*}source")
+                text = "" if src is None else "".join(src.itertext())
+                words += count_words(text)
+            return f"{len(units)} сегментов, {words} слов"
         except Exception:
             return "Недоступно"
 
