@@ -288,6 +288,10 @@ class MainWindow(QMainWindow):
         self.manager.error_occurred.connect(self.on_conversion_error)
         self.manager.excel_conversion_finished.connect(self.on_excel_conversion_finished)
         self.manager.excel_conversion_error.connect(self.on_excel_conversion_error)
+        self.manager.tb_progress.connect(lambda p: self.progress_widget.update_progress(p, "TB", 1, 1))
+        self.manager.tb_log.connect(self.log_message)
+        self.manager.tb_finished.connect(self.on_tb_conversion_finished)
+        self.manager.tb_error.connect(self.on_tb_conversion_error)
 
     def setup_connections(self):
         """Настраивает дополнительные соединения сигналов"""
@@ -343,6 +347,7 @@ class MainWindow(QMainWindow):
     def on_files_dropped(self, filepaths: List[str]):
         """Обработчик добавления файлов с поддержкой Excel"""
         excel_files = []
+        termbase_files = []
         regular_files = []
 
         # Разделяем файлы на Excel и обычные
@@ -350,12 +355,17 @@ class MainWindow(QMainWindow):
             path = Path(filepath)
             if self.controller.is_excel_file(path):
                 excel_files.append(filepath)
+            elif self.controller.is_termbase_file(path):
+                termbase_files.append(filepath)
             else:
                 regular_files.append(filepath)
 
         # Обрабатываем Excel файлы через диалог настройки
         for excel_file in excel_files:
             self.handle_excel_file(Path(excel_file))
+
+        for tb_file in termbase_files:
+            self.handle_termbase_file(Path(tb_file))
 
         # Обычные файлы добавляем как раньше
         if regular_files:
@@ -383,7 +393,7 @@ class MainWindow(QMainWindow):
             self,
             "Выберите файлы для конвертации",
             "",
-            "Все поддерживаемые (*.sdltm *.xlsx *.xls *.tmx *.xml);;SDLTM (*.sdltm);;Excel (*.xlsx *.xls);;TMX (*.tmx);;XML (*.xml)"
+            "Все поддерживаемые (*.sdltm *.xlsx *.xls *.tmx *.xml *.mtf *.tbx);;SDLTM (*.sdltm);;Excel (*.xlsx *.xls);;TMX (*.tmx);;XML/Termbase (*.xml *.mtf *.tbx)"
         )
 
         if files:
@@ -499,6 +509,60 @@ class MainWindow(QMainWindow):
                 f"Не удалось запустить конвертацию Excel:\n\n{e}"
             )
 
+    def handle_termbase_file(self, filepath: Path):
+        """Обрабатывает терминологическую базу"""
+        try:
+            self.log_message(f"📖 Анализируем TB файл: {filepath.name}")
+
+            settings = self.controller.show_termbase_config_dialog(filepath, self)
+            if settings:
+                self.log_message(f"✅ Настройки TB приняты: {filepath.name}")
+                self.start_termbase_conversion(filepath, settings)
+            else:
+                self.log_message(f"❌ Конвертация TB отменена: {filepath.name}")
+        except Exception as e:
+            error_msg = f"Ошибка обработки TB файла: {e}"
+            self.log_message(f"💥 {error_msg}")
+            logger.exception(error_msg)
+            QMessageBox.critical(
+                self,
+                "Ошибка TB",
+                f"Не удалось обработать файл:\n\n{filepath.name}\n\n{e}"
+            )
+
+    def start_termbase_conversion(self, filepath: Path, settings):
+        """Запускает конвертацию терминологической базы"""
+        try:
+            is_valid, error_msg = self.controller.validate_termbase_conversion_settings(settings)
+            if not is_valid:
+                QMessageBox.warning(self, "Ошибка настроек", error_msg)
+                return
+
+            options = self.controller.prepare_termbase_conversion_options(settings)
+
+            options.progress_callback = lambda p, msg: self.progress_widget.update_progress(p, f"TB: {msg}", 1, 1)
+            options.should_stop_callback = lambda: not self.is_converting
+
+            self.manager.start_termbase(filepath, options)
+
+            self.is_converting = True
+            self.start_btn.setEnabled(False)
+            self.stop_btn.setEnabled(True)
+            self.add_files_btn.setEnabled(False)
+            self.add_excel_btn.setEnabled(False)
+
+            self.progress_widget.reset()
+            self.log_message(f"🚀 Начата конвертация TB: {filepath.name}")
+        except Exception as e:
+            error_msg = f"Ошибка запуска TB конвертации: {e}"
+            self.log_message(f"💥 {error_msg}")
+            logger.exception(error_msg)
+            QMessageBox.critical(
+                self,
+                "Ошибка запуска",
+                f"Не удалось запустить конвертацию TB:\n\n{e}"
+            )
+
     def on_excel_conversion_finished(self, result):
         """Обработчик завершения Excel конвертации"""
         try:
@@ -568,6 +632,27 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             logger.exception(f"Error in Excel error handler: {e}")
+
+    def on_tb_conversion_finished(self, success: bool, message: str):
+        """Обработка завершения конвертации терминологической базы"""
+        self.is_converting = False
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.add_files_btn.setEnabled(True)
+        self.add_excel_btn.setEnabled(True)
+
+        if success:
+            self.progress_widget.set_completion_status(True, "TB конвертация завершена!")
+            self.log_message(f"✅ {message}")
+            QMessageBox.information(self, "Конвертация завершена", message)
+        else:
+            self.progress_widget.set_completion_status(False, "Ошибка TB конвертации")
+            self.log_message(f"❌ {message}")
+            QMessageBox.warning(self, "Ошибка конвертации", message)
+
+    def on_tb_conversion_error(self, message: str):
+        """Обработчик ошибок TB конвертации"""
+        self.on_tb_conversion_finished(False, message)
 
     # ===========================================
     # КОНВЕРТАЦИЯ ОБЫЧНЫХ ФАЙЛОВ

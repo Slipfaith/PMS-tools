@@ -1,3 +1,9 @@
 from .excel_config_dialog import ExcelConfigDialog
 from .language_dialog import LanguageDialog
-__all__ = ["ExcelConfigDialog", "LanguageDialog"]
+from .termbase_config_dialog import TermbaseConfigDialog
+
+__all__ = [
+    "ExcelConfigDialog",
+    "LanguageDialog",
+    "TermbaseConfigDialog",
+]

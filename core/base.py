@@ -137,6 +137,14 @@ class ExcelConversionSettings:
 
 
 @dataclass
+class TermBaseConversionSettings:
+    """Настройки конвертации терминологических баз"""
+    source_language: str
+    export_tmx: bool = True
+    export_xlsx: bool = False
+
+
+@dataclass
 class TranslationSegment:
     """Сегмент перевода"""
     source_text: str

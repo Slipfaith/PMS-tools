@@ -184,11 +184,11 @@ class SmartDropArea(QWidget):
             self,
             "Выберите файлы для конвертации",
             "",
-            "Все поддерживаемые (*.sdltm *.xlsx *.xls *.tmx *.xml *.mtf);;"
+            "Все поддерживаемые (*.sdltm *.xlsx *.xls *.tmx *.xml *.mtf *.tbx);;"
             "SDLTM (*.sdltm);;"
             "Excel (*.xlsx *.xls);;"
             "TMX (*.tmx);;"
-            "XML/Termbase (*.xml *.mtf)"
+            "XML/Termbase (*.xml *.mtf *.tbx)"
         )
 
         if files:

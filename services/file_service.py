@@ -19,7 +19,8 @@ class FileService:
             '.xls': 'Excel Workbook',
             '.tmx': 'TMX Memory',
             '.xml': 'XML/Termbase',
-            '.mtf': 'MultiTerm Format'
+            '.mtf': 'MultiTerm Format',
+            '.tbx': 'TBX Termbase'
         }
 
     def get_file_info(self, filepath: Path) -> Dict[str, any]:
@@ -71,7 +72,8 @@ class FileService:
             '.xls': '📊',
             '.tmx': '🔄',
             '.xml': '📋',
-            '.mtf': '📖'
+            '.mtf': '📖',
+            '.tbx': '📖'
         }
         return icons.get(suffix, '📄')
 
