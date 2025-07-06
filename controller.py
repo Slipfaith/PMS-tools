@@ -418,3 +418,34 @@ class MainController:
                         break
                 except Exception:
                     continue  # Игнорируем ошибки автоопределения для Excel
+
+    # ===========================================
+    # SDXLIFF SPLIT/MERGE
+    # ===========================================
+
+    def analyze_sdxliff_file(self, filepath: Path) -> dict:
+        from services.split_service import SplitService
+        service = SplitService()
+        return service.analyze(filepath)
+
+    def split_sdxliff_file(
+        self,
+        filepath: Path,
+        *,
+        parts: int | None = None,
+        words: int | None = None,
+        output_dir: Path | None = None,
+    ) -> list[Path]:
+        from services.split_service import SplitService
+        service = SplitService()
+        return service.split(
+            filepath,
+            parts=parts,
+            words_per_file=words,
+            output_dir=output_dir,
+        )
+
+    def merge_sdxliff_parts(self, part_paths: List[Path], output_path: Path) -> Path:
+        from services.split_service import SplitService
+        service = SplitService()
+        return service.merge(part_paths, output_path)
