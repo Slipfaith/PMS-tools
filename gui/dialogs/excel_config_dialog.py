@@ -381,12 +381,13 @@ class ExcelSheetWidget(QWidget):
         # ИСПРАВЛЕНО: Настройка размеров колонок
         header = self.table.horizontalHeader()
         self.table.setColumnWidth(0, 250)  # Название колонки - фиксированная ширина
-        self.table.setColumnWidth(1, 200)  # Тип - фиксированная ширина
-        self.table.setColumnWidth(2, 150)  # Язык - фиксированная ширина
         self.table.setColumnWidth(3, 100)  # Включить - фиксированная ширина
 
-        # Запрещаем изменение размера колонок пользователем
-        header.setSectionResizeMode(QHeaderView.Fixed)
+        # Автоматически подбираем ширину для колонок "Тип" и "Язык"
+        header.setSectionResizeMode(0, QHeaderView.Fixed)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.Fixed)
 
         # Настройка поведения таблицы
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -495,6 +496,7 @@ class ExcelSheetWidget(QWidget):
             ])
             type_combo.setCurrentText("Текст для перевода")
             type_combo.setMinimumWidth(180)
+            type_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
             self.table.setCellWidget(row, 1, type_combo)
 
             # Язык - простое поле ввода
