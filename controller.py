@@ -40,24 +40,26 @@ class MainController:
             # Получаем информацию о файле
             file_info = self.file_service.get_file_info(filepath)
             languages = None
-            if filepath.suffix.lower() == '.sdltm':
+            if filepath.suffix.lower() == ".sdltm":
                 languages = self.file_service.auto_detect_languages(filepath)
                 if languages:
                     self.file_languages[filepath] = languages
 
             # Добавляем только поддерживаемые файлы
-            if file_info['is_supported']:
+            if file_info["is_supported"]:
                 self.files.append(filepath)
                 new_files.append(filepath)
-                files_info.append({
-                    'path': filepath,
-                    'name': file_info['name'],
-                    'size_mb': file_info['size_mb'],
-                    'format': file_info['format'],
-                    'format_icon': file_info['format_icon'],
-                    'extra_info': file_info['extra_info'],
-                    'languages': languages
-                })
+                files_info.append(
+                    {
+                        "path": filepath,
+                        "name": file_info["name"],
+                        "size_mb": file_info["size_mb"],
+                        "format": file_info["format"],
+                        "format_icon": file_info["format_icon"],
+                        "extra_info": file_info["extra_info"],
+                        "languages": languages,
+                    }
+                )
 
         # Автоопределение языков из первого SDLTM файла
         if new_files:
@@ -94,28 +96,28 @@ class MainController:
         """Возвращает автоопределенные языки"""
         return self.auto_detected_languages
 
-    def prepare_conversion_options(self, gui_options: Dict) -> 'ConversionOptions':
+    def prepare_conversion_options(self, gui_options: Dict) -> "ConversionOptions":
         """
         Создает опции конвертации из данных GUI
         """
         from core.base import ConversionOptions
 
         # Используем языки из GUI или автоопределенные
-        src_lang = gui_options.get('source_lang', '').strip()
-        tgt_lang = gui_options.get('target_lang', '').strip()
+        src_lang = gui_options.get("source_lang", "").strip()
+        tgt_lang = gui_options.get("target_lang", "").strip()
 
         if not src_lang and self.auto_detected_languages:
-            src_lang = self.auto_detected_languages.get('source', 'auto')
+            src_lang = self.auto_detected_languages.get("source", "auto")
         if not tgt_lang and self.auto_detected_languages:
-            tgt_lang = self.auto_detected_languages.get('target', 'auto')
+            tgt_lang = self.auto_detected_languages.get("target", "auto")
 
         return ConversionOptions(
-            export_tmx=gui_options.get('export_tmx', True),
-            export_xlsx=gui_options.get('export_xlsx', False),
-            export_json=gui_options.get('export_json', False),
-            source_lang=src_lang or 'auto',
-            target_lang=tgt_lang or 'auto',
-            batch_size=1000
+            export_tmx=gui_options.get("export_tmx", True),
+            export_xlsx=gui_options.get("export_xlsx", False),
+            export_json=gui_options.get("export_json", False),
+            source_lang=src_lang or "auto",
+            target_lang=tgt_lang or "auto",
+            batch_size=1000,
         )
 
     def get_files_for_conversion(self) -> List[Path]:
@@ -129,7 +131,7 @@ class MainController:
     def set_file_languages(self, filepath: Path, source: str, target: str):
         """Устанавливает языки для конкретного файла"""
         if filepath in self.files:
-            self.file_languages[filepath] = {'source': source, 'target': target}
+            self.file_languages[filepath] = {"source": source, "target": target}
 
     def get_file_language_mapping(self) -> Dict[Path, Dict[str, str]]:
         """Возвращает словарь языков для файлов"""
@@ -144,9 +146,9 @@ class MainController:
 
         # Проверяем, что выбран хотя бы один формат экспорта
         formats_selected = (
-                gui_options.get('export_tmx', False) or
-                gui_options.get('export_xlsx', False) or
-                gui_options.get('export_json', False)
+            gui_options.get("export_tmx", False)
+            or gui_options.get("export_xlsx", False)
+            or gui_options.get("export_json", False)
         )
 
         if not formats_selected:
@@ -160,11 +162,19 @@ class MainController:
 
     def is_excel_file(self, filepath: Path) -> bool:
         """Проверяет, является ли файл Excel"""
-        return filepath.suffix.lower() in ['.xlsx', '.xls']
+        return filepath.suffix.lower() in [".xlsx", ".xls"]
 
     def is_termbase_file(self, filepath: Path) -> bool:
         """Проверяет, является ли файл терминологической базой"""
-        return filepath.suffix.lower() in ['.xml', '.mtf', '.tbx']
+        return filepath.suffix.lower() in [".xml", ".mtf", ".tbx"]
+
+    def is_sdxliff_file(self, filepath: Path) -> bool:
+        """Возвращает True, если файл является SDXLIFF"""
+        return filepath.suffix.lower() in [".sdxliff", ".sdlxliff"]
+
+    def get_sdxliff_files(self) -> List[Path]:
+        """Возвращает список SDXLIFF файлов из добавленных"""
+        return [f for f in self.files if self.is_sdxliff_file(f)]
 
     def analyze_excel_file(self, filepath: Path):
         """Анализирует Excel файл для настройки конвертации"""
@@ -180,7 +190,9 @@ class MainController:
             # Анализируем структуру
             analysis = converter.analyze_excel_structure(filepath)
 
-            logger.info(f"Excel analysis completed: {filepath.name}, {len(analysis.sheets)} sheets")
+            logger.info(
+                f"Excel analysis completed: {filepath.name}, {len(analysis.sheets)} sheets"
+            )
             return analysis
 
         except Exception as e:
@@ -211,11 +223,12 @@ class MainController:
             logger.error(f"Error in Excel config dialog for {filepath}: {e}")
             # Показываем ошибку пользователю
             from PySide6.QtWidgets import QMessageBox
+
             QMessageBox.critical(
                 parent_widget,
                 "Ошибка анализа Excel",
                 f"Не удалось проанализировать Excel файл:\n\n{e}\n\n"
-                f"Убедитесь, что файл не поврежден и содержит данные."
+                f"Убедитесь, что файл не поврежден и содержит данные.",
             )
             return None
 
@@ -223,12 +236,15 @@ class MainController:
         """Диалог настройки конвертации терминологической базы"""
         try:
             from utils.term_base import extract_tb_info
+
             info = extract_tb_info(filepath)
 
             from gui.dialogs.termbase_config_dialog import TermbaseConfigDialog
             from PySide6.QtWidgets import QDialog
 
-            dialog = TermbaseConfigDialog(filepath, info.get("languages", []), parent_widget)
+            dialog = TermbaseConfigDialog(
+                filepath, info.get("languages", []), parent_widget
+            )
 
             if dialog.exec() == QDialog.Accepted:
                 return dialog.get_settings()
@@ -236,10 +252,11 @@ class MainController:
         except Exception as e:
             logger.error(f"Error in termbase config dialog for {filepath}: {e}")
             from PySide6.QtWidgets import QMessageBox
+
             QMessageBox.critical(
                 parent_widget,
                 "Ошибка анализа Termbase",
-                f"Не удалось прочитать файл:\n\n{e}"
+                f"Не удалось прочитать файл:\n\n{e}",
             )
             return None
 
@@ -251,8 +268,10 @@ class MainController:
             converter = ExcelConverter()
             result = converter.convert_excel_to_tmx(filepath, settings, options)
 
-            logger.info(f"Excel conversion result: success={result.success}, "
-                        f"output_files={len(result.output_files)}")
+            logger.info(
+                f"Excel conversion result: success={result.success}, "
+                f"output_files={len(result.output_files)}"
+            )
             return result
 
         except Exception as e:
@@ -271,7 +290,7 @@ class MainController:
             logger.error(f"Error converting termbase {filepath}: {e}")
             raise
 
-    def prepare_excel_conversion_options(self, settings) -> 'ConversionOptions':
+    def prepare_excel_conversion_options(self, settings) -> "ConversionOptions":
         """Создает опции конвертации для Excel"""
         from core.base import ConversionOptions
 
@@ -281,10 +300,10 @@ class MainController:
             export_json=False,
             source_lang=settings.source_language,
             target_lang=settings.target_language,
-            batch_size=1000
+            batch_size=1000,
         )
 
-    def prepare_termbase_conversion_options(self, settings) -> 'ConversionOptions':
+    def prepare_termbase_conversion_options(self, settings) -> "ConversionOptions":
         """Создает опции конвертации для терминологической базы"""
         from core.base import ConversionOptions
 
@@ -293,7 +312,7 @@ class MainController:
             export_xlsx=settings.export_xlsx,
             export_json=False,
             source_lang=settings.source_language,
-            target_lang='',
+            target_lang="",
             batch_size=1000,
         )
 
@@ -322,13 +341,18 @@ class MainController:
 
                 # Проверяем наличие текстовых колонок
                 from core.base import ColumnType
+
                 text_columns = [
-                    col for col in settings.column_mappings[sheet_name].values()
+                    col
+                    for col in settings.column_mappings[sheet_name].values()
                     if col.final_type == ColumnType.TEXT
                 ]
 
                 if len(text_columns) < 2:
-                    return False, f"Лист '{sheet_name}': недостаточно текстовых колонок (нужно минимум 2)"
+                    return (
+                        False,
+                        f"Лист '{sheet_name}': недостаточно текстовых колонок (нужно минимум 2)",
+                    )
 
             return True, "OK"
 
@@ -362,28 +386,28 @@ class MainController:
             sheets_info = f"{len(analysis.sheets)} листов"
 
             return {
-                'path': filepath,
-                'name': filepath.name,
-                'size_mb': filepath.stat().st_size / (1024 * 1024),
-                'format': 'Excel Workbook',
-                'format_icon': '📊',
-                'extra_info': f"{sheets_info}, ~{total_segments} сегментов",
-                'is_supported': True,
-                'is_excel': True,
-                'analysis': analysis
+                "path": filepath,
+                "name": filepath.name,
+                "size_mb": filepath.stat().st_size / (1024 * 1024),
+                "format": "Excel Workbook",
+                "format_icon": "📊",
+                "extra_info": f"{sheets_info}, ~{total_segments} сегментов",
+                "is_supported": True,
+                "is_excel": True,
+                "analysis": analysis,
             }
 
         except Exception as e:
             logger.error(f"Error getting Excel file info: {e}")
             return {
-                'path': filepath,
-                'name': filepath.name,
-                'size_mb': filepath.stat().st_size / (1024 * 1024),
-                'format': 'Excel Workbook (ошибка)',
-                'format_icon': '⚠️',
-                'extra_info': f"Ошибка анализа: {e}",
-                'is_supported': False,
-                'is_excel': True
+                "path": filepath,
+                "name": filepath.name,
+                "size_mb": filepath.stat().st_size / (1024 * 1024),
+                "format": "Excel Workbook (ошибка)",
+                "format_icon": "⚠️",
+                "extra_info": f"Ошибка анализа: {e}",
+                "is_supported": False,
+                "is_excel": True,
             }
 
     # ===========================================
@@ -397,12 +421,14 @@ class MainController:
 
         # Ищем первый SDLTM файл
         for filepath in new_files:
-            if filepath.suffix.lower() == '.sdltm':
+            if filepath.suffix.lower() == ".sdltm":
                 languages = self.file_service.auto_detect_languages(filepath)
                 if languages:
                     self.auto_detected_languages = languages
                     self.auto_language_source = filepath
-                    logger.info(f"Auto-detected languages from {filepath.name}: {languages}")
+                    logger.info(
+                        f"Auto-detected languages from {filepath.name}: {languages}"
+                    )
                     break
             elif self.is_excel_file(filepath):
                 # Для Excel файлов тоже можем попробовать определить языки
@@ -410,11 +436,13 @@ class MainController:
                     analysis = self.analyze_excel_file(filepath)
                     if analysis.detected_source_lang and analysis.detected_target_lang:
                         self.auto_detected_languages = {
-                            'source': analysis.detected_source_lang,
-                            'target': analysis.detected_target_lang
+                            "source": analysis.detected_source_lang,
+                            "target": analysis.detected_target_lang,
                         }
                         self.auto_language_source = filepath
-                        logger.info(f"Auto-detected languages from Excel: {self.auto_detected_languages}")
+                        logger.info(
+                            f"Auto-detected languages from Excel: {self.auto_detected_languages}"
+                        )
                         break
                 except Exception:
                     continue  # Игнорируем ошибки автоопределения для Excel
@@ -425,6 +453,7 @@ class MainController:
 
     def analyze_sdxliff_file(self, filepath: Path) -> dict:
         from services.split_service import SplitService
+
         service = SplitService()
         return service.analyze(filepath)
 
@@ -437,6 +466,7 @@ class MainController:
         output_dir: Path | None = None,
     ) -> list[Path]:
         from services.split_service import SplitService
+
         service = SplitService()
         return service.split(
             filepath,
@@ -447,5 +477,6 @@ class MainController:
 
     def merge_sdxliff_parts(self, part_paths: List[Path], output_path: Path) -> Path:
         from services.split_service import SplitService
+
         service = SplitService()
         return service.merge(part_paths, output_path)
