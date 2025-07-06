@@ -271,14 +271,8 @@ class MainWindow(QMainWindow):
         export_layout.addStretch()
         layout.addLayout(export_layout)
 
-        # Автоопределенные языки
-        auto_lang_layout = QHBoxLayout()
-        auto_lang_layout.addWidget(QLabel("Автоопределенные языки:"))
-        self.auto_langs_label = QLabel("Будут определены из файла")
-        self.auto_langs_label.setStyleSheet("color: #666; font-style: italic;")
-        auto_lang_layout.addWidget(self.auto_langs_label)
-        auto_lang_layout.addStretch()
-        layout.addLayout(auto_lang_layout)
+        # Автоопределенные языки (удалено из UI)
+        self.auto_langs_label = QLabel()
 
         # Переопределение языков
         override_label = QLabel("Переопределить (оставьте пустым для автоопределения):")
@@ -317,6 +311,7 @@ class MainWindow(QMainWindow):
     def setup_connections(self):
         """Настраивает дополнительные соединения сигналов"""
         self.file_list.files_changed.connect(self.on_files_changed)
+        self.file_list.file_language_edit_requested.connect(self.edit_file_languages)
 
     def setup_status_bar(self):
         """Настраивает статус бар"""
@@ -463,6 +458,21 @@ class MainWindow(QMainWindow):
                 "Ошибка Excel",
                 f"Не удалось обработать Excel файл:\n\n{filepath.name}\n\n{e}"
             )
+
+    def edit_file_languages(self, filepath: Path):
+        """Открывает диалог ручной настройки языков для файла"""
+        langs = self.controller.get_file_languages(filepath) or {}
+        src = langs.get('source', '')
+        tgt = langs.get('target', '')
+        from gui.dialogs import LanguageDialog
+        from PySide6.QtWidgets import QDialog
+
+        dialog = LanguageDialog(src, tgt, self)
+        if dialog.exec() == QDialog.Accepted:
+            src_lang, tgt_lang = dialog.get_languages()
+            if src_lang or tgt_lang:
+                self.controller.set_file_languages(filepath, src_lang, tgt_lang)
+                self.file_list.set_file_languages(filepath, {'source': src_lang, 'target': tgt_lang})
 
     def start_excel_conversion(self, filepath: Path, settings):
         """Запускает конвертацию Excel файла"""
