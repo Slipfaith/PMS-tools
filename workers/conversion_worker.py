@@ -336,7 +336,9 @@ class BatchConversionWorker(QObject):
 
     def _on_file_started(self, filepath: Path):
         """ИСПРАВЛЕНО: Начало файла"""
-        # current_file_index обновляется в основном цикле
+        # Увеличиваем счетчик текущего файла
+        with QMutexLocker(self.mutex):
+            self.current_file_index += 1
         self.file_started.emit(filepath)
 
     def _on_file_completed(self, filepath: Path, result):
@@ -353,6 +355,8 @@ class BatchConversionWorker(QObject):
         successful = sum(1 for r in results if r.success)
         final_message = f"Завершено: {successful}/{len(results)} файлов"
 
+        with QMutexLocker(self.mutex):
+            self.current_file_index = len(results)
         self.progress_changed.emit(100, final_message, len(results), len(results))
 
         # Эмитим сигнал завершения пакета
