@@ -62,7 +62,8 @@ class TermBaseConverter(StreamingConverter):
             if options.export_xlsx:
                 self._update_progress(40, "Exporting XLSX...", options)
                 xlsx_path = filepath.with_suffix(".xlsx")
-                self._write_xlsx(xlsx_path, rows, langs)
+                src_code = options.source_lang or (langs[0] if langs else "en-US")
+                self._write_xlsx(xlsx_path, rows, langs, src_code)
                 output_files.append(xlsx_path)
 
             if options.export_tmx:
@@ -91,14 +92,18 @@ class TermBaseConverter(StreamingConverter):
 
     # Internal helpers -----------------------------------------------------
     @staticmethod
-    def _write_xlsx(path: Path, rows: List[Dict[str, str]], langs: List[str]):
+    def _write_xlsx(path: Path, rows: List[Dict[str, str]], langs: List[str], src_code: str):
         from openpyxl import Workbook
+        from utils.lang_utils import get_normalized_lang
+
+        src_key = get_normalized_lang(src_code) or src_code.lower()
+        ordered = [src_key] + [l for l in langs if l != src_key]
 
         wb = Workbook()
         ws = wb.active
-        ws.append(langs)
+        ws.append(ordered)
         for row in rows:
-            ws.append([row.get(lang, "") for lang in langs])
+            ws.append([row.get(lang, "") for lang in ordered])
         wb.save(str(path))
         logger.info(f"XLSX saved: {path}")
 
@@ -118,9 +123,13 @@ class TermBaseConverter(StreamingConverter):
             },
         )
         body = SubElement(tmx, "body")
+        from utils.lang_utils import get_normalized_lang
+
+        src_key = get_normalized_lang(src_code) or src_code.lower()
+        tgt_key = get_normalized_lang(tgt_code) or tgt_code.lower()
         for row in rows:
-            src = row.get(src_code, "").strip()
-            tgt = row.get(tgt_code, "").strip()
+            src = row.get(src_key, "").strip()
+            tgt = row.get(tgt_key, "").strip()
             if not src or not tgt:
                 continue
             tu = SubElement(body, "tu")
