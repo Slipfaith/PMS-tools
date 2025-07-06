@@ -163,6 +163,10 @@ class SdltmConverter(StreamingConverter):
             src_lang = self._resolve_language(options.source_lang, detected_languages.get('source', 'en-US'))
             tgt_lang = self._resolve_language(options.target_lang, detected_languages.get('target', 'ru-RU'))
 
+            # Если пользователь явно указал язык, игнорируем языки сегментов
+            override_src = options.source_lang and options.source_lang.lower() not in ["auto", "unknown", ""]
+            override_tgt = options.target_lang and options.target_lang.lower() not in ["auto", "unknown", ""]
+
             logger.info(f"Using languages: {src_lang} → {tgt_lang}")
 
             # Обработка сегментов
@@ -216,8 +220,15 @@ class SdltmConverter(StreamingConverter):
 
                 seen_pairs.add(pair_key)
 
-                final_src_lang = seg_src_lang if seg_src_lang != "unknown" else src_lang
-                final_tgt_lang = seg_tgt_lang if seg_tgt_lang != "unknown" else tgt_lang
+                if override_src:
+                    final_src_lang = src_lang
+                else:
+                    final_src_lang = seg_src_lang if seg_src_lang != "unknown" else src_lang
+
+                if override_tgt:
+                    final_tgt_lang = tgt_lang
+                else:
+                    final_tgt_lang = seg_tgt_lang if seg_tgt_lang != "unknown" else tgt_lang
 
                 segments.append((src_text, tgt_text, final_src_lang, final_tgt_lang))
                 stats["exported"] += 1
@@ -297,10 +308,27 @@ class SdltmConverter(StreamingConverter):
 
     def convert_streaming(self, filepath: Path, options: ConversionOptions) -> Iterator[Tuple[str, str, str, str]]:
         """Потоковая обработка"""
+        detected_languages = self._detect_languages(filepath)
+        src_lang = self._resolve_language(options.source_lang, detected_languages.get('source', 'en-US'))
+        tgt_lang = self._resolve_language(options.target_lang, detected_languages.get('target', 'ru-RU'))
+
+        override_src = options.source_lang and options.source_lang.lower() not in ["auto", "unknown", ""]
+        override_tgt = options.target_lang and options.target_lang.lower() not in ["auto", "unknown", ""]
+
         for segment_data in self.convert_streaming_detailed(filepath, options):
-            src_text, tgt_text, src_lang, tgt_lang, skip_reason = segment_data
+            src_text, tgt_text, seg_src_lang, seg_tgt_lang, skip_reason = segment_data
             if skip_reason is None:
-                yield (src_text, tgt_text, src_lang, tgt_lang)
+                if override_src:
+                    final_src = src_lang
+                else:
+                    final_src = seg_src_lang if seg_src_lang != "unknown" else src_lang
+
+                if override_tgt:
+                    final_tgt = tgt_lang
+                else:
+                    final_tgt = seg_tgt_lang if seg_tgt_lang != "unknown" else tgt_lang
+
+                yield (src_text, tgt_text, final_src, final_tgt)
 
     def convert_streaming_detailed(self, filepath: Path, options: ConversionOptions):
         """Потоковая обработка с деталями"""
