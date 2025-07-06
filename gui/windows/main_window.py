@@ -3,7 +3,7 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QTextEdit, QFileDialog, QMessageBox,
-    QGroupBox, QCheckBox, QSplitter, QFrame, QLineEdit
+    QGroupBox, QCheckBox, QSplitter, QFrame
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
@@ -274,27 +274,8 @@ class MainWindow(QMainWindow):
         # Автоопределенные языки (удалено из UI)
         self.auto_langs_label = QLabel()
 
-        # Переопределение языков
-        override_label = QLabel("Переопределить (оставьте пустым для автоопределения):")
-        override_label.setStyleSheet("font-size: 11px; color: #666; margin-top: 5px;")
-        layout.addWidget(override_label)
-
-        manual_layout = QHBoxLayout()
-        manual_layout.addWidget(QLabel("Исходный:"))
-
-        self.src_lang_edit = QLineEdit()
-        self.src_lang_edit.setPlaceholderText("например: en-US")
-        self.src_lang_edit.setMaximumWidth(120)
-        manual_layout.addWidget(self.src_lang_edit)
-
-        manual_layout.addWidget(QLabel("Целевой:"))
-        self.tgt_lang_edit = QLineEdit()
-        self.tgt_lang_edit.setPlaceholderText("например: ru-RU")
-        self.tgt_lang_edit.setMaximumWidth(120)
-        manual_layout.addWidget(self.tgt_lang_edit)
-
-        manual_layout.addStretch()
-        layout.addLayout(manual_layout)
+        # Отображение автоопределенных языков
+        layout.addWidget(self.auto_langs_label)
 
         return group
 
@@ -598,9 +579,7 @@ class MainWindow(QMainWindow):
         gui_options = {
             'export_tmx': self.tmx_cb.isChecked(),
             'export_xlsx': self.xlsx_cb.isChecked(),
-            'export_json': self.json_cb.isChecked(),
-            'source_lang': self.src_lang_edit.text().strip(),
-            'target_lang': self.tgt_lang_edit.text().strip()
+            'export_json': self.json_cb.isChecked()
         }
 
         # Валидируем через контроллер

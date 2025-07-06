@@ -38,6 +38,9 @@ class ConversionWorker(QObject):
         self.current_file_index = 0
         self.total_files = 0
         self.file_start_time = None
+        self.file_segments = {}
+        self.total_segments = 0
+        self.processed_segments = 0
 
     def _init_converters(self):
         """Инициализирует конвертеры"""
@@ -48,12 +51,16 @@ class ConversionWorker(QObject):
         except ImportError as e:
             logger.warning(f"Failed to load SDLTM converter: {e}")
 
-    def convert_files(self, filepaths: List[Path], options, file_languages=None):
-        """ИСПРАВЛЕНО: Конвертация с динамическим прогрессом"""
+    def convert_files(self, filepaths: List[Path], options, file_languages=None,
+                      file_segments: Optional[dict] = None, total_segments: Optional[int] = None):
+        """Конвертация с динамическим прогрессом"""
         with QMutexLocker(self.mutex):
             self.should_stop = False
             self.total_files = len(filepaths)
             self.current_file_index = 0
+            self.file_segments = file_segments or {}
+            self.total_segments = total_segments or self.total_files
+            self.processed_segments = 0
 
         results = []
 
@@ -91,7 +98,12 @@ class ConversionWorker(QObject):
                     continue
 
                 # Прогресс для текущего файла
-                base_progress = int((i / self.total_files) * 100)
+                base_segments = self.processed_segments
+                file_total = self.file_segments.get(filepath, 0)
+                if self.total_segments:
+                    base_progress = int((base_segments / self.total_segments) * 100)
+                else:
+                    base_progress = int((i / self.total_files) * 100)
                 self._update_progress(base_progress, f"Обрабатывается: {filepath.name}")
 
                 # Создаем опции с колбэками
@@ -102,8 +114,12 @@ class ConversionWorker(QObject):
                     result = converter.convert(filepath, file_options)
                     results.append(result)
 
-                    # Прогресс завершения файла
-                    file_complete_progress = int(((i + 1) / self.total_files) * 100)
+                    self.processed_segments += file_total
+                    if self.total_segments:
+                        file_complete_progress = int((self.processed_segments / self.total_segments) * 100)
+                    else:
+                        file_complete_progress = int(((i + 1) / self.total_files) * 100)
+
                     if result.success:
                         self._update_progress(file_complete_progress, f"✅ Завершен: {filepath.name}")
                     else:
@@ -122,6 +138,12 @@ class ConversionWorker(QObject):
 
                     result = self._create_error_result(filepath, str(e))
                     results.append(result)
+                    self.processed_segments += file_total
+                    if self.total_segments:
+                        file_complete_progress = int((self.processed_segments / self.total_segments) * 100)
+                    else:
+                        file_complete_progress = int(((i + 1) / self.total_files) * 100)
+                    self._update_progress(file_complete_progress, f"❌ Ошибка: {filepath.name}")
                     self.file_completed.emit(filepath, result)
 
             # Останавливаем таймер
@@ -169,15 +191,20 @@ class ConversionWorker(QObject):
         from core.base import ConversionOptions
 
         def file_progress_callback(progress: int, message: str):
-            """Колбэк прогресса для отдельного файла"""
-            # Рассчитываем общий прогресс
-            base_progress = int((file_index / self.total_files) * 100)
-            file_progress_weight = int((1 / self.total_files) * 100)
-            file_contribution = int((progress / 100) * file_progress_weight)
+            """Колбэк прогресса для файла с учетом сегментов"""
+            file_total = self.file_segments.get(filepath, 0)
+            base_segments = self.processed_segments
 
-            total_progress = min(99, base_progress + file_contribution)
+            if self.total_segments:
+                base_progress = (base_segments / self.total_segments) * 100
+                file_contrib = (progress / 100) * (file_total / self.total_segments) * 100
+                total_progress = int(min(99, base_progress + file_contrib))
+            else:
+                base_progress = int((file_index / self.total_files) * 100)
+                file_progress_weight = int((1 / self.total_files) * 100)
+                file_contrib = int((progress / 100) * file_progress_weight)
+                total_progress = min(99, base_progress + file_contrib)
 
-            # Обновляем прогресс
             self._update_progress(total_progress, f"{filepath.name}: {message}")
 
         def should_stop_callback():
@@ -258,7 +285,7 @@ class BatchConversionWorker(QObject):
         self.batch_start_time = None
 
     def convert_batch(self, filepaths: List[Path], options, file_languages=None):
-        """ИСПРАВЛЕНО: Запуск пакетной конвертации"""
+        """Запуск пакетной конвертации с учетом сегментов"""
         with QMutexLocker(self.mutex):
             self.current_file_index = 0
             self.total_files = len(filepaths)
@@ -267,11 +294,23 @@ class BatchConversionWorker(QObject):
 
         logger.info(f"Starting batch conversion of {self.total_files} files")
 
-        # Начальный прогресс
+        file_segments = {}
+        total_segments = 0
+        for fp in filepaths:
+            converter = self.conversion_worker._get_converter(fp)
+            if converter:
+                try:
+                    segs = converter.get_progress_steps(fp)
+                except Exception:
+                    segs = 0
+            else:
+                segs = 0
+            file_segments[fp] = segs
+            total_segments += segs
+
         self.progress_changed.emit(0, "Подготовка к конвертации...", 0, self.total_files)
 
-        # Запускаем конвертацию
-        self.conversion_worker.convert_files(filepaths, options, file_languages)
+        self.conversion_worker.convert_files(filepaths, options, file_languages, file_segments, total_segments)
 
     def stop_batch(self):
         """Остановка пакетной конвертации"""
