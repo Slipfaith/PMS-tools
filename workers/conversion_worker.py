@@ -51,6 +51,13 @@ class ConversionWorker(QObject):
         except ImportError as e:
             logger.warning(f"Failed to load SDLTM converter: {e}")
 
+        try:
+            from core.converters.termbase_converter import TermBaseConverter
+            self.converters['termbase'] = TermBaseConverter()
+            logger.info("TermBase converter loaded")
+        except ImportError as e:
+            logger.warning(f"Failed to load TermBase converter: {e}")
+
     def convert_files(self, filepaths: List[Path], options, file_languages=None,
                       file_segments: Optional[dict] = None, total_segments: Optional[int] = None):
         """Конвертация с динамическим прогрессом"""
