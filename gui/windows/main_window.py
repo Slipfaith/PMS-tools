@@ -1,9 +1,19 @@
 # gui/windows/main_window.py - БЕЗ МИНИМАЛЬНЫХ РАЗМЕРОВ
 
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QTextEdit, QFileDialog, QMessageBox,
-    QGroupBox, QCheckBox, QSplitter, QFrame
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QLabel,
+    QTextEdit,
+    QFileDialog,
+    QMessageBox,
+    QGroupBox,
+    QCheckBox,
+    QSplitter,
+    QFrame,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
@@ -30,8 +40,10 @@ class MainWindow(QMainWindow):
 
         # Создаем контроллер
         from controller import MainController
+
         self.controller = MainController()
         from services import ConversionManager
+
         self.manager = ConversionManager()
 
         self.setup_window()
@@ -77,20 +89,28 @@ class MainWindow(QMainWindow):
                 self.move(available_geometry.center() - window_geometry.center())
 
                 # Если окно больше доступной области, уменьшаем его
-                if (window_geometry.width() > available_geometry.width() or
-                        window_geometry.height() > available_geometry.height()):
-                    new_width = min(window_geometry.width(), available_geometry.width() - 20)
-                    new_height = min(window_geometry.height(), available_geometry.height() - 20)
+                if (
+                    window_geometry.width() > available_geometry.width()
+                    or window_geometry.height() > available_geometry.height()
+                ):
+                    new_width = min(
+                        window_geometry.width(), available_geometry.width() - 20
+                    )
+                    new_height = min(
+                        window_geometry.height(), available_geometry.height() - 20
+                    )
                     self.resize(new_width, new_height)
                     self.move(available_geometry.center() - self.rect().center())
 
     def changeEvent(self, event):
         """Обработчик изменения состояния окна"""
         from PySide6.QtCore import QEvent
+
         if event.type() == QEvent.WindowStateChange:
             if self.windowState() & Qt.WindowMaximized:
                 # При максимизации используем доступную область экрана
                 from PySide6.QtWidgets import QApplication
+
                 screen = QApplication.primaryScreen()
                 if screen:
                     # Используем availableGeometry вместо geometry
@@ -154,6 +174,7 @@ class MainWindow(QMainWindow):
 
         # Область для перетаскивания файлов
         from gui.widgets.drop_area import SmartDropArea
+
         self.drop_area = SmartDropArea()
         # Подключаем к контроллеру
         self.drop_area.files_dropped.connect(self.on_files_dropped)
@@ -175,6 +196,7 @@ class MainWindow(QMainWindow):
 
         # Кнопка для работы с SDXLIFF split/merge
         self.sdxliff_btn = QPushButton("🪄 Split/Merge SDXLIFF")
+        self.sdxliff_btn.setEnabled(False)
         self.sdxliff_btn.clicked.connect(self.open_sdxliff_window)
         file_buttons.addWidget(self.sdxliff_btn)
 
@@ -187,6 +209,7 @@ class MainWindow(QMainWindow):
 
         # Список файлов
         from gui.widgets.file_list import FileListWidget
+
         self.file_list = FileListWidget()
         self.file_list.file_remove_requested.connect(self.on_file_remove_requested)
         self.file_list.clear_all_btn.clicked.connect(self.clear_files)
@@ -223,6 +246,7 @@ class MainWindow(QMainWindow):
 
         # Виджет прогресса
         from gui.widgets.progress_widget import ProgressWidget
+
         self.progress_widget = ProgressWidget()
         layout.addWidget(self.progress_widget)
 
@@ -291,9 +315,13 @@ class MainWindow(QMainWindow):
         self.manager.file_completed.connect(self.on_file_completed)
         self.manager.batch_completed.connect(self.on_batch_completed)
         self.manager.error_occurred.connect(self.on_conversion_error)
-        self.manager.excel_conversion_finished.connect(self.on_excel_conversion_finished)
+        self.manager.excel_conversion_finished.connect(
+            self.on_excel_conversion_finished
+        )
         self.manager.excel_conversion_error.connect(self.on_excel_conversion_error)
-        self.manager.tb_progress.connect(lambda p: self.progress_widget.update_progress(p, "TB", 1, 1))
+        self.manager.tb_progress.connect(
+            lambda p: self.progress_widget.update_progress(p, "TB", 1, 1)
+        )
         self.manager.tb_log.connect(self.log_message)
         self.manager.tb_finished.connect(self.on_tb_conversion_finished)
         self.manager.tb_error.connect(self.on_tb_conversion_error)
@@ -321,7 +349,7 @@ class MainWindow(QMainWindow):
 
         if filename:
             try:
-                with open(filename, 'w', encoding='utf-8') as f:
+                with open(filename, "w", encoding="utf-8") as f:
                     f.write(self.log_text.toPlainText())
                 self.log_message(f"Логи сохранены в: {filename}")
             except Exception as e:
@@ -330,6 +358,7 @@ class MainWindow(QMainWindow):
     def log_message(self, message: str):
         """Добавляет сообщение в лог"""
         from datetime import datetime
+
         timestamp = datetime.now().strftime("%H:%M:%S")
         formatted_message = f"[{timestamp}] {message}"
         self.log_text.append(formatted_message)
@@ -342,7 +371,9 @@ class MainWindow(QMainWindow):
         # Ограничиваем количество строк в логе
         if self.log_text.document().lineCount() > 1000:
             cursor.movePosition(cursor.MoveOperation.Start)
-            cursor.movePosition(cursor.MoveOperation.Down, cursor.MoveMode.KeepAnchor, 100)
+            cursor.movePosition(
+                cursor.MoveOperation.Down, cursor.MoveMode.KeepAnchor, 100
+            )
             cursor.removeSelectedText()
 
     # ===========================================
@@ -398,7 +429,7 @@ class MainWindow(QMainWindow):
             self,
             "Выберите файлы для конвертации",
             "",
-            "Все поддерживаемые (*.sdltm *.sdxliff *.sdlxliff *.xlsx *.xls *.tmx *.xml *.mtf *.tbx);;SDLTM (*.sdltm);;SDLXLIFF (*.sdxliff *.sdlxliff);;Excel (*.xlsx *.xls);;TMX (*.tmx);;XML/Termbase (*.xml *.mtf *.tbx)"
+            "Все поддерживаемые (*.sdltm *.sdxliff *.sdlxliff *.xlsx *.xls *.tmx *.xml *.mtf *.tbx);;SDLTM (*.sdltm);;SDLXLIFF (*.sdxliff *.sdlxliff);;Excel (*.xlsx *.xls);;TMX (*.tmx);;XML/Termbase (*.xml *.mtf *.tbx)",
         )
 
         if files:
@@ -410,7 +441,7 @@ class MainWindow(QMainWindow):
             self,
             "Выберите Excel файлы для конвертации",
             "",
-            "Excel файлы (*.xlsx *.xls);;XLSX (*.xlsx);;XLS (*.xls)"
+            "Excel файлы (*.xlsx *.xls);;XLSX (*.xlsx);;XLS (*.xls)",
         )
 
         if files:
@@ -420,8 +451,17 @@ class MainWindow(QMainWindow):
     def open_sdxliff_window(self):
         """Открывает окно split/merge SDXLIFF"""
         from gui.windows.sdxliff_split_window import SdxliffSplitWindow
+
+        files = self.controller.get_sdxliff_files()
+        if not files:
+            QMessageBox.information(
+                self, "Нет файлов", "Нет SDXLIFF файлов для обработки"
+            )
+            return
         if not hasattr(self, "_sdxliff_window") or self._sdxliff_window is None:
-            self._sdxliff_window = SdxliffSplitWindow(self.controller, self)
+            self._sdxliff_window = SdxliffSplitWindow(self.controller, files, self)
+        else:
+            self._sdxliff_window.set_files(files)
         self._sdxliff_window.show()
 
     def clear_files(self):
@@ -459,14 +499,14 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Ошибка Excel",
-                f"Не удалось обработать Excel файл:\n\n{filepath.name}\n\n{e}"
+                f"Не удалось обработать Excel файл:\n\n{filepath.name}\n\n{e}",
             )
 
     def edit_file_languages(self, filepath: Path):
         """Открывает диалог ручной настройки языков для файла"""
         langs = self.controller.get_file_languages(filepath) or {}
-        src = langs.get('source', '')
-        tgt = langs.get('target', '')
+        src = langs.get("source", "")
+        tgt = langs.get("target", "")
         from gui.dialogs import LanguageDialog
         from PySide6.QtWidgets import QDialog
 
@@ -475,13 +515,17 @@ class MainWindow(QMainWindow):
             src_lang, tgt_lang = dialog.get_languages()
             if src_lang or tgt_lang:
                 self.controller.set_file_languages(filepath, src_lang, tgt_lang)
-                self.file_list.set_file_languages(filepath, {'source': src_lang, 'target': tgt_lang})
+                self.file_list.set_file_languages(
+                    filepath, {"source": src_lang, "target": tgt_lang}
+                )
 
     def start_excel_conversion(self, filepath: Path, settings):
         """Запускает конвертацию Excel файла"""
         try:
             # Валидируем настройки
-            is_valid, error_msg = self.controller.validate_excel_conversion_settings(settings)
+            is_valid, error_msg = self.controller.validate_excel_conversion_settings(
+                settings
+            )
             if not is_valid:
                 QMessageBox.warning(self, "Ошибка настроек", error_msg)
                 return
@@ -490,8 +534,10 @@ class MainWindow(QMainWindow):
             options = self.controller.prepare_excel_conversion_options(settings)
 
             # Добавляем колбэки прогресса
-            options.progress_callback = lambda progress, message: self.progress_widget.update_progress(
-                progress, f"Excel: {message}", 1, 1
+            options.progress_callback = (
+                lambda progress, message: self.progress_widget.update_progress(
+                    progress, f"Excel: {message}", 1, 1
+                )
             )
             options.should_stop_callback = lambda: not self.is_converting
 
@@ -508,7 +554,9 @@ class MainWindow(QMainWindow):
             self.progress_widget.reset()
             self.log_message(f"🚀 Начата конвертация Excel: {filepath.name}")
             self.log_message(f"   📊 Листов: {len(settings.selected_sheets)}")
-            self.log_message(f"   🌐 Языки: {settings.source_language} → {settings.target_language}")
+            self.log_message(
+                f"   🌐 Языки: {settings.source_language} → {settings.target_language}"
+            )
 
         except Exception as e:
             error_msg = f"Ошибка запуска Excel конвертации: {e}"
@@ -518,7 +566,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Ошибка запуска",
-                f"Не удалось запустить конвертацию Excel:\n\n{e}"
+                f"Не удалось запустить конвертацию Excel:\n\n{e}",
             )
 
     def handle_termbase_file(self, filepath: Path):
@@ -539,20 +587,26 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Ошибка TB",
-                f"Не удалось обработать файл:\n\n{filepath.name}\n\n{e}"
+                f"Не удалось обработать файл:\n\n{filepath.name}\n\n{e}",
             )
 
     def start_termbase_conversion(self, filepath: Path, settings):
         """Запускает конвертацию терминологической базы"""
         try:
-            is_valid, error_msg = self.controller.validate_termbase_conversion_settings(settings)
+            is_valid, error_msg = self.controller.validate_termbase_conversion_settings(
+                settings
+            )
             if not is_valid:
                 QMessageBox.warning(self, "Ошибка настроек", error_msg)
                 return
 
             options = self.controller.prepare_termbase_conversion_options(settings)
 
-            options.progress_callback = lambda p, msg: self.progress_widget.update_progress(p, f"TB: {msg}", 1, 1)
+            options.progress_callback = (
+                lambda p, msg: self.progress_widget.update_progress(
+                    p, f"TB: {msg}", 1, 1
+                )
+            )
             options.should_stop_callback = lambda: not self.is_converting
 
             self.manager.start_termbase(filepath, options)
@@ -570,9 +624,7 @@ class MainWindow(QMainWindow):
             self.log_message(f"💥 {error_msg}")
             logger.exception(error_msg)
             QMessageBox.critical(
-                self,
-                "Ошибка запуска",
-                f"Не удалось запустить конвертацию TB:\n\n{e}"
+                self, "Ошибка запуска", f"Не удалось запустить конвертацию TB:\n\n{e}"
             )
 
     def on_excel_conversion_finished(self, result):
@@ -590,23 +642,30 @@ class MainWindow(QMainWindow):
                 # Успешная конвертация
                 stats = result.stats
 
-                self.progress_widget.set_completion_status(True, "Excel конвертация завершена!")
+                self.progress_widget.set_completion_status(
+                    True, "Excel конвертация завершена!"
+                )
 
                 self.log_message(
                     f"✅ Excel конвертация завершена за {stats.get('conversion_time', 0):.1f}с! "
-                    f"Экспортировано: {stats.get('exported_segments', 0)} сегментов")
+                    f"Экспортировано: {stats.get('exported_segments', 0)} сегментов"
+                )
 
             else:
                 # Ошибка конвертации
-                self.progress_widget.set_completion_status(False, "Ошибка Excel конвертации")
+                self.progress_widget.set_completion_status(
+                    False, "Ошибка Excel конвертации"
+                )
 
-                error_msg = '; '.join(result.errors) if result.errors else "Неизвестная ошибка"
+                error_msg = (
+                    "; ".join(result.errors) if result.errors else "Неизвестная ошибка"
+                )
                 self.log_message(f"❌ Ошибка Excel конвертации: {error_msg}")
 
                 QMessageBox.warning(
                     self,
                     "Ошибка конвертации",
-                    f"Не удалось конвертировать Excel файл:\n\n{error_msg}"
+                    f"Не удалось конвертировать Excel файл:\n\n{error_msg}",
                 )
 
         except Exception as e:
@@ -629,7 +688,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Критическая ошибка",
-                f"Произошла критическая ошибка при конвертации Excel:\n\n{error_msg}"
+                f"Произошла критическая ошибка при конвертации Excel:\n\n{error_msg}",
             )
 
         except Exception as e:
@@ -644,7 +703,9 @@ class MainWindow(QMainWindow):
         self.add_excel_btn.setEnabled(True)
 
         if success:
-            self.progress_widget.set_completion_status(True, "TB конвертация завершена!")
+            self.progress_widget.set_completion_status(
+                True, "TB конвертация завершена!"
+            )
             self.log_message(f"✅ {message}")
         else:
             self.progress_widget.set_completion_status(False, "Ошибка TB конвертации")
@@ -663,9 +724,9 @@ class MainWindow(QMainWindow):
         """Запускает конвертацию обычных файлов"""
         # Собираем опции из GUI
         gui_options = {
-            'export_tmx': self.tmx_cb.isChecked(),
-            'export_xlsx': self.xlsx_cb.isChecked(),
-            'export_json': self.json_cb.isChecked()
+            "export_tmx": self.tmx_cb.isChecked(),
+            "export_xlsx": self.xlsx_cb.isChecked(),
+            "export_json": self.json_cb.isChecked(),
         }
 
         # Валидируем через контроллер
@@ -690,7 +751,9 @@ class MainWindow(QMainWindow):
         self.file_list.reset_all_status()
 
         # Запускаем конвертацию через worker
-        self.manager.start_batch(files, options, self.controller.get_file_language_mapping())
+        self.manager.start_batch(
+            files, options, self.controller.get_file_language_mapping()
+        )
         self.log_message(f"🚀 Начата конвертация {len(files)} файлов")
 
     def stop_conversion(self):
@@ -707,15 +770,17 @@ class MainWindow(QMainWindow):
         files_info = []
         for filepath in self.controller.get_files_for_conversion():
             file_info = self.controller.file_service.get_file_info(filepath)
-            files_info.append({
-                'path': filepath,
-                'name': file_info['name'],
-                'size_mb': file_info['size_mb'],
-                'format': file_info['format'],
-                'format_icon': file_info['format_icon'],
-                'extra_info': file_info['extra_info'],
-                'languages': self.controller.get_file_languages(filepath)
-            })
+            files_info.append(
+                {
+                    "path": filepath,
+                    "name": file_info["name"],
+                    "size_mb": file_info["size_mb"],
+                    "format": file_info["format"],
+                    "format_icon": file_info["format_icon"],
+                    "extra_info": file_info["extra_info"],
+                    "languages": self.controller.get_file_languages(filepath),
+                }
+            )
 
         self.file_list.update_files(files_info)
 
@@ -734,16 +799,27 @@ class MainWindow(QMainWindow):
             self.auto_langs_label.setText("Будут определены из файла")
             self.auto_langs_label.setStyleSheet("color: #666; font-style: italic;")
 
+    def _update_sdxliff_button_state(self):
+        """Включает кнопку Split/Merge при наличии SDXLIFF файлов"""
+        has_sdxliff = len(self.controller.get_sdxliff_files()) > 0
+        self.sdxliff_btn.setEnabled(has_sdxliff)
+
     # ===========================================
     # ОБРАБОТЧИКИ WORKER'А ДЛЯ ОБЫЧНЫХ ФАЙЛОВ
     # ===========================================
 
-    def on_progress_update(self, progress: int, message: str, current_file: int, total_files: int):
+    def on_progress_update(
+        self, progress: int, message: str, current_file: int, total_files: int
+    ):
         """Обработчик обновления прогресса"""
-        self.progress_widget.update_progress(progress, message, current_file, total_files)
+        self.progress_widget.update_progress(
+            progress, message, current_file, total_files
+        )
 
         if total_files > 0:
-            self.status_label.setText(f"Обработка файла {current_file}/{total_files}: {message}")
+            self.status_label.setText(
+                f"Обработка файла {current_file}/{total_files}: {message}"
+            )
         else:
             self.status_label.setText(message)
 
@@ -764,10 +840,14 @@ class MainWindow(QMainWindow):
         if file_item:
             if result.success:
                 stats = result.stats
-                exported_count = stats.get('exported', 0)
-                file_item.set_conversion_completed(True, f"Экспортировано: {exported_count}")
+                exported_count = stats.get("exported", 0)
+                file_item.set_conversion_completed(
+                    True, f"Экспортировано: {exported_count}"
+                )
             else:
-                error_msg = '; '.join(result.errors) if result.errors else "Неизвестная ошибка"
+                error_msg = (
+                    "; ".join(result.errors) if result.errors else "Неизвестная ошибка"
+                )
                 file_item.set_conversion_completed(False, error_msg)
 
         if result.success:
@@ -779,9 +859,12 @@ class MainWindow(QMainWindow):
             self.log_message(
                 f"   Экспортировано: {stats.get('exported', 0)} | "
                 f"Всего: {stats.get('total_in_sdltm', stats.get('total', 0))} | "
-                f"Время: {stats.get('conversion_time', 0):.1f}с")
+                f"Время: {stats.get('conversion_time', 0):.1f}с"
+            )
         else:
-            error_msg = '; '.join(result.errors) if result.errors else "Неизвестная ошибка"
+            error_msg = (
+                "; ".join(result.errors) if result.errors else "Неизвестная ошибка"
+            )
             self.log_message(f"❌ Ошибка: {filepath.name} - {error_msg}")
 
     def on_batch_completed(self, results: List):
@@ -800,9 +883,13 @@ class MainWindow(QMainWindow):
 
         # Финальный статус в progress_widget
         if successful == total:
-            self.progress_widget.set_completion_status(True, f"Все файлы успешно конвертированы!")
+            self.progress_widget.set_completion_status(
+                True, f"Все файлы успешно конвертированы!"
+            )
         else:
-            self.progress_widget.set_completion_status(False, f"Конвертировано {successful} из {total} файлов")
+            self.progress_widget.set_completion_status(
+                False, f"Конвертировано {successful} из {total} файлов"
+            )
 
         # Итоговое сообщение
         self.log_message(f"🎉 Конвертация завершена: {successful}/{total} успешно")
@@ -813,7 +900,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Конвертация не удалась",
                 f"Ни один файл не был успешно конвертирован.\n"
-                f"Проверьте логи для подробностей."
+                f"Проверьте логи для подробностей.",
             )
 
     def on_conversion_error(self, error_msg: str):
@@ -838,13 +925,14 @@ class MainWindow(QMainWindow):
             self,
             "Ошибка конвертации",
             f"Произошла критическая ошибка:\n\n{error_msg}\n\n"
-            f"Проверьте логи для подробностей."
+            f"Проверьте логи для подробностей.",
         )
 
     def on_files_changed(self, file_count: int):
         """Обработчик изменения списка файлов"""
         self.start_btn.setEnabled(file_count > 0 and not self.is_converting)
         self.status_label.setText(f"Файлов в очереди: {file_count}")
+        self._update_sdxliff_button_state()
 
     def closeEvent(self, event):
         """Обработчик закрытия окна"""
@@ -855,7 +943,7 @@ class MainWindow(QMainWindow):
                 "Конвертация в процессе",
                 "Конвертация еще не завершена. Остановить и закрыть приложение?",
                 QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
+                QMessageBox.No,
             )
 
             if reply == QMessageBox.No:
@@ -867,4 +955,3 @@ class MainWindow(QMainWindow):
         self.manager.shutdown()
         event.accept()
         logger.info("Main window closed")
-
