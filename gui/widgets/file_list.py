@@ -151,6 +151,7 @@ class FileListItem(QWidget):
                 padding: 1px;
             }
         """)
+        self.status_label.setWordWrap(True)
         self.status_label.setVisible(False)
         main_layout.addWidget(self.status_label)
 
