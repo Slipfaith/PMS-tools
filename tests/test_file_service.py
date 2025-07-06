@@ -12,6 +12,10 @@ def test_is_supported():
     assert service.is_supported(Path(xml_tmp.name))
     tbx_tmp = tempfile.NamedTemporaryFile(suffix=".tbx")
     assert service.is_supported(Path(tbx_tmp.name))
+    sdx_tmp = tempfile.NamedTemporaryFile(suffix=".sdxliff")
+    assert service.is_supported(Path(sdx_tmp.name))
+    sdlx_tmp = tempfile.NamedTemporaryFile(suffix=".sdlxliff")
+    assert service.is_supported(Path(sdlx_tmp.name))
 
 
 def test_get_format_name_and_icon():
@@ -20,6 +24,10 @@ def test_get_format_name_and_icon():
     path = Path(tmp.name)
     assert service.get_format_name(path) == "Excel Workbook"
     assert service.get_format_icon(path) == "📊"
+    sdlx = tempfile.NamedTemporaryFile(suffix=".sdlxliff")
+    spath = Path(sdlx.name)
+    assert service.get_format_name(spath) == "SDXLIFF File"
+    assert service.get_format_icon(spath) == "📄"
     unknown = Path(tmp.name + ".unknown")
     assert service.get_format_name(unknown) == "Unknown Format"
     assert service.get_format_icon(unknown) == "📄"
@@ -31,9 +39,11 @@ def test_detect_files_format_mixed(tmp_path):
     file1.write_text("test")
     file2 = tmp_path / "b.xlsx"
     file2.write_text("test")
-    name, valid = service.detect_files_format([str(file1), str(file2)])
+    file3 = tmp_path / "c.sdlxliff"
+    file3.write_text("test")
+    name, valid = service.detect_files_format([str(file1), str(file2), str(file3)])
     assert "Смешанные форматы" in name
-    assert set(valid) == {str(file1), str(file2)}
+    assert set(valid) == {str(file1), str(file2), str(file3)}
 
 
 def test_normalize_language():

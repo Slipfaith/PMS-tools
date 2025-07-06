@@ -393,7 +393,7 @@ class MainWindow(QMainWindow):
             self,
             "Выберите файлы для конвертации",
             "",
-            "Все поддерживаемые (*.sdltm *.xlsx *.xls *.tmx *.xml *.mtf *.tbx);;SDLTM (*.sdltm);;Excel (*.xlsx *.xls);;TMX (*.tmx);;XML/Termbase (*.xml *.mtf *.tbx)"
+            "Все поддерживаемые (*.sdltm *.sdxliff *.sdlxliff *.xlsx *.xls *.tmx *.xml *.mtf *.tbx);;SDLTM (*.sdltm);;SDLXLIFF (*.sdxliff *.sdlxliff);;Excel (*.xlsx *.xls);;TMX (*.tmx);;XML/Termbase (*.xml *.mtf *.tbx)"
         )
 
         if files:
