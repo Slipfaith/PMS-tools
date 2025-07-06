@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QLabel, QPushButton, QProgressBar, QFrame, QSizePolicy
+    QLabel, QPushButton, QProgressBar, QFrame, QSizePolicy, QLineEdit
 )
 from PySide6.QtCore import Signal, Qt, QSize
 from PySide6.QtGui import QFont, QIcon
@@ -104,6 +104,25 @@ class FileListItem(QWidget):
         self.info_label.setWordWrap(True)
         main_layout.addWidget(self.info_label)
 
+        # Редактирование языков (по умолчанию скрыто)
+        self.lang_widget = QWidget()
+        lang_layout = QHBoxLayout(self.lang_widget)
+        lang_layout.setContentsMargins(0, 0, 0, 0)
+        lang_layout.setSpacing(4)
+        lang_layout.addWidget(QLabel("Исх."))
+        self.src_edit = QLineEdit(self.file_info.get('languages', {}).get('source', ''))
+        self.src_edit.setPlaceholderText("en-US")
+        self.src_edit.setMaximumWidth(80)
+        lang_layout.addWidget(self.src_edit)
+        lang_layout.addWidget(QLabel("Цел."))
+        self.tgt_edit = QLineEdit(self.file_info.get('languages', {}).get('target', ''))
+        self.tgt_edit.setPlaceholderText("ru-RU")
+        self.tgt_edit.setMaximumWidth(80)
+        lang_layout.addWidget(self.tgt_edit)
+        lang_layout.addStretch()
+        self.lang_widget.setVisible(False)
+        main_layout.addWidget(self.lang_widget)
+
         # Прогресс-бар (скрыт по умолчанию)
         self.progress_bar = QProgressBar()
         self.progress_bar.setMaximumHeight(8)
@@ -181,12 +200,19 @@ class FileListItem(QWidget):
         self.progress_bar.setVisible(False)
         self.status_label.setVisible(False)
 
+    def set_selected(self, selected: bool):
+        self.lang_widget.setVisible(selected)
+
+    def get_languages(self) -> tuple[str, str]:
+        return self.src_edit.text().strip(), self.tgt_edit.text().strip()
+
 
 class FileListWidget(QWidget):
     """ОЧИЩЕНО: Виджет для отображения списка файлов БЕЗ бизнес-логики"""
 
     files_changed = Signal(int)
     file_remove_requested = Signal(Path)  # Проброс сигнала наверх
+    file_selected = Signal(Path)
 
     def __init__(self):
         super().__init__()
@@ -247,17 +273,20 @@ class FileListWidget(QWidget):
                 background: transparent;
             }
             QListWidget::item:selected {
-                background: transparent;
-                border: none;
+                background: #e8f5e9;
+                border: 1px solid #4CAF50;
+                border-radius: 6px;
             }
             QListWidget::item:hover {
                 background: transparent;
             }
         """)
 
-        # Отключаем стандартное выделение
-        self.list_widget.setSelectionMode(QListWidget.NoSelection)
-        self.list_widget.setFocusPolicy(Qt.NoFocus)
+        # Разрешаем выделение одного элемента
+        self.list_widget.setSelectionMode(QListWidget.SingleSelection)
+        self.list_widget.setFocusPolicy(Qt.StrongFocus)
+
+        self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
 
         layout.addWidget(self.list_widget)
 
@@ -390,3 +419,28 @@ class FileListWidget(QWidget):
         """Сбрасывает статус всех файлов"""
         for file_item in self.file_items.values():
             file_item.reset_status()
+
+    def get_file_languages(self, filepath: Path) -> tuple[str, str]:
+        item = self.get_file_item(filepath)
+        if item:
+            return item.get_languages()
+        return "", ""
+
+    def get_all_languages(self) -> Dict[Path, tuple[str, str]]:
+        return {path: item.get_languages() for path, item in self.file_items.items()}
+
+    def _on_selection_changed(self):
+        selected_items = self.list_widget.selectedItems()
+        selected_path = None
+
+        if selected_items:
+            item = selected_items[0]
+            widget = self.list_widget.itemWidget(item)
+            if isinstance(widget, FileListItem):
+                selected_path = widget.filepath
+
+        for path, widget in self.file_items.items():
+            widget.set_selected(path == selected_path)
+
+        if selected_path:
+            self.file_selected.emit(selected_path)

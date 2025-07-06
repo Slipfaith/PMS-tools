@@ -38,6 +38,7 @@ class ConversionOptions:
     source_lang: str = "en-US"
     target_lang: str = "ru-RU"
     batch_size: int = 1000
+    file_languages: Optional[Dict[Path, tuple[str, str]]] = None
     progress_callback: Optional[Callable[[int, str], None]] = None
     should_stop_callback: Optional[Callable[[], bool]] = None
 

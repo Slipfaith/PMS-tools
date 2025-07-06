@@ -271,15 +271,6 @@ class MainWindow(QMainWindow):
         export_layout.addStretch()
         layout.addLayout(export_layout)
 
-        # Автоопределенные языки
-        auto_lang_layout = QHBoxLayout()
-        auto_lang_layout.addWidget(QLabel("Автоопределенные языки:"))
-        self.auto_langs_label = QLabel("Будут определены из файла")
-        self.auto_langs_label.setStyleSheet("color: #666; font-style: italic;")
-        auto_lang_layout.addWidget(self.auto_langs_label)
-        auto_lang_layout.addStretch()
-        layout.addLayout(auto_lang_layout)
-
         # Переопределение языков
         override_label = QLabel("Переопределить (оставьте пустым для автоопределения):")
         override_label.setStyleSheet("font-size: 11px; color: #666; margin-top: 5px;")
@@ -348,7 +339,6 @@ class MainWindow(QMainWindow):
         if files_info:
             self.file_list.update_files(files_info)
             self.log_message(f"Добавлено файлов: {len(files_info)}")
-            self._update_auto_languages_display()
         else:
             self.log_message("Не найдено поддерживаемых файлов")
 
@@ -384,7 +374,6 @@ class MainWindow(QMainWindow):
         self.progress_widget.reset()
         self.results_text.clear()
         self.log_message("Список файлов очищен")
-        self._update_auto_languages_display()
 
     def start_conversion(self):
         """ОБНОВЛЕНО: Запускает конвертацию через контроллер"""
@@ -405,6 +394,8 @@ class MainWindow(QMainWindow):
 
         # Подготавливаем опции через контроллер
         options = self.controller.prepare_conversion_options(gui_options)
+        # Добавляем языки для каждого файла
+        options.file_languages = self.file_list.get_all_languages()
         files = self.controller.get_files_for_conversion()
 
         # Переключаем UI в режим конвертации
@@ -438,18 +429,6 @@ class MainWindow(QMainWindow):
             })
 
         self.file_list.update_files(files_info)
-
-    def _update_auto_languages_display(self):
-        """Обновляет отображение автоопределенных языков"""
-        languages = self.controller.get_auto_detected_languages()
-
-        if languages:
-            lang_text = f"{languages['source']} → {languages['target']}"
-            self.auto_langs_label.setText(lang_text)
-            self.auto_langs_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
-        else:
-            self.auto_langs_label.setText("Будут определены из файла")
-            self.auto_langs_label.setStyleSheet("color: #666; font-style: italic;")
 
     # Остальные методы без изменений (обработчики worker'а и UI)
 
