@@ -17,12 +17,17 @@ class FileListItem(QWidget):
     """Виджет для отображения файла"""
 
     remove_requested = Signal(Path)
+    double_clicked = Signal(Path)
 
     def __init__(self, file_info: Dict):
         super().__init__()
         self.filepath = file_info['path']
         self.file_info = file_info
         self.setup_ui()
+
+    def mouseDoubleClickEvent(self, event):
+        self.double_clicked.emit(self.filepath)
+        super().mouseDoubleClickEvent(event)
 
     def update_languages(self, languages: Dict[str, str]):
         """Обновляет отображение языков"""
@@ -207,6 +212,7 @@ class FileListWidget(QWidget):
 
     files_changed = Signal(int)
     file_remove_requested = Signal(Path)
+    file_language_edit_requested = Signal(Path)
 
     def __init__(self):
         super().__init__()
@@ -275,9 +281,9 @@ class FileListWidget(QWidget):
             }
         """)
 
-        # Отключаем стандартное выделение
-        self.list_widget.setSelectionMode(QListWidget.NoSelection)
-        self.list_widget.setFocusPolicy(Qt.NoFocus)
+        # Позволяем выделять элементы для ручной настройки
+        self.list_widget.setSelectionMode(QListWidget.SingleSelection)
+        self.list_widget.setFocusPolicy(Qt.StrongFocus)
 
         # Убираем минимальный размер
         self.list_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -337,6 +343,7 @@ class FileListWidget(QWidget):
         # Создаем виджет для файла
         file_item = FileListItem(file_info)
         file_item.remove_requested.connect(self.file_remove_requested.emit)
+        file_item.double_clicked.connect(self.file_language_edit_requested.emit)
 
         # Создаем элемент списка
         list_item = QListWidgetItem()
