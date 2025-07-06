@@ -72,7 +72,7 @@ class SmartDropArea(QWidget):
         layout.addWidget(self.format_label)
 
         # Список поддерживаемых форматов
-        formats_text = "SDLTM, Excel, TMX, XML/TB"
+        formats_text = "SDLTM, SDLXLIFF, Excel, TMX, XML/TB"
         self.formats_label = QLabel(formats_text)
         self.formats_label.setAlignment(Qt.AlignCenter)
         self.formats_label.setStyleSheet("""
@@ -184,8 +184,9 @@ class SmartDropArea(QWidget):
             self,
             "Выберите файлы для конвертации",
             "",
-            "Все поддерживаемые (*.sdltm *.xlsx *.xls *.tmx *.xml *.mtf *.tbx);;"
+            "Все поддерживаемые (*.sdltm *.sdxliff *.sdlxliff *.xlsx *.xls *.tmx *.xml *.mtf *.tbx);;"
             "SDLTM (*.sdltm);;"
+            "SDLXLIFF (*.sdxliff *.sdlxliff);;"
             "Excel (*.xlsx *.xls);;"
             "TMX (*.tmx);;"
             "XML/Termbase (*.xml *.mtf *.tbx)"

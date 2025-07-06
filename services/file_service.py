@@ -16,6 +16,7 @@ class FileService:
         self.supported_formats = {
             '.sdltm': 'SDL Trados Memory',
             '.sdxliff': 'SDXLIFF File',
+            '.sdlxliff': 'SDXLIFF File',
             '.xlsx': 'Excel Workbook',
             '.xls': 'Excel Workbook',
             '.tmx': 'TMX Memory',
@@ -42,7 +43,7 @@ class FileService:
                 info['extra_info'] = self._get_sdltm_info(filepath)
             elif suffix in ['.xlsx', '.xls']:
                 info['extra_info'] = self._get_excel_info(filepath)
-            elif suffix == '.sdxliff':
+            elif suffix in ['.sdxliff', '.sdlxliff']:
                 info['extra_info'] = self.get_sdxliff_info(filepath)
 
             return info
@@ -73,6 +74,7 @@ class FileService:
         icons = {
             '.sdltm': '🗄️',
             '.sdxliff': '📄',
+            '.sdlxliff': '📄',
             '.xlsx': '📊',
             '.xls': '📊',
             '.tmx': '🔄',
