@@ -11,6 +11,7 @@ from .sdlxliff_utils import (
     read_text,
     slice_sdlxliff,
     write_text,
+    compute_group_stacks,
 )
 
 
@@ -29,6 +30,8 @@ class SdlxliffSplitter:
     ) -> List[Path]:
         text, encoding, bom = read_text(file_path)
         header, pres, segments, tail = parse_sdlxliff(text)
+        stacks = compute_group_stacks(pres)
+        valid_boundaries = [i for i, st in enumerate(stacks) if not st]
 
         # compute words per segment
         words = []
@@ -58,15 +61,23 @@ class SdlxliffSplitter:
             if idx < total_segments:
                 assignments[-1].update(range(idx, total_segments))
         else:
-            base = total_segments // parts_count
-            remainder = total_segments % parts_count
+            if len(valid_boundaries) - 1 < parts_count:
+                raise ValueError(
+                    'Cannot split into %d parts without breaking group structure' % parts_count
+                )
+            boundaries = [0]
+            used = set(boundaries)
+            for p in range(1, parts_count):
+                target = int(round(p * total_segments / parts_count))
+                boundary = next(b for b in valid_boundaries if b >= target and b not in used)
+                boundaries.append(boundary)
+                used.add(boundary)
+            boundaries.append(total_segments)
+            boundaries = sorted(set(boundaries))
             assignments = []
-            start = 0
-            for p in range(parts_count):
-                count = base + (1 if p < remainder else 0)
-                indices = set(range(start, start + count))
+            for i in range(len(boundaries) - 1):
+                indices = set(range(boundaries[i], boundaries[i + 1]))
                 assignments.append(indices)
-                start += count
 
         output_dir.mkdir(parents=True, exist_ok=True)
         part_paths: List[Path] = []

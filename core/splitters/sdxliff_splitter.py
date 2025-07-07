@@ -12,6 +12,7 @@ from .sdlxliff_utils import (
     extract_namespaces,
     slice_sdxliff,
     write_text,
+    compute_group_stacks,
 )
 
 
@@ -43,6 +44,9 @@ class SdxliffSplitter:
         text, encoding, bom = read_text(filepath)
         header, pres, segments, tail = parse_sdxliff(text)
 
+        stacks = compute_group_stacks(pres)
+        valid_boundaries = [i for i, st in enumerate(stacks) if not st]
+
         words = []
         parser = etree.XMLParser(remove_blank_text=False, strip_cdata=False)
         namespaces = extract_namespaces(header)
@@ -60,13 +64,24 @@ class SdxliffSplitter:
 
         assignments: List[Set[int]] = []
         if parts is not None:
-            base = total_segments // parts
-            remainder = total_segments % parts
-            start = 0
-            for p in range(parts):
-                count = base + (1 if p < remainder else 0)
-                assignments.append(set(range(start, start + count)))
-                start += count
+            if len(valid_boundaries) - 1 < parts:
+                raise ValueError(
+                    f"Cannot split into {parts} parts without breaking group structure"
+                )
+
+            boundaries = [0]
+            used = set(boundaries)
+            for p in range(1, parts):
+                target = int(round(p * total_segments / parts))
+                boundary = next(
+                    b for b in valid_boundaries if b >= target and b not in used
+                )
+                boundaries.append(boundary)
+                used.add(boundary)
+            boundaries.append(total_segments)
+            boundaries = sorted(set(boundaries))
+            for i in range(len(boundaries) - 1):
+                assignments.append(set(range(boundaries[i], boundaries[i + 1])))
         else:
             idx = 0
             while idx < total_segments:
