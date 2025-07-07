@@ -139,6 +139,26 @@ def reconstruct_sdxliff(
     return reconstruct_sdlxliff(header, pres, segs, tail, include)
 
 
+GROUP_OPEN_RE = re.compile(r"<(?:[\w.-]+:)?group\b[^>]*>(?!\s*</)")
+GROUP_CLOSE_RE = re.compile(r"</(?:[\w.-]+:)?group>")
+
+
+def compute_group_stacks(pres: list[str]) -> list[list[str]]:
+    """Return stack of open groups after each ``pres`` element."""
+
+    stack: list[str] = []
+    stacks: list[list[str]] = [stack.copy()]
+    for p in pres:
+        for m in GROUP_OPEN_RE.finditer(p):
+            if not m.group(0).endswith("/>"):
+                stack.append(m.group(0))
+        for _ in GROUP_CLOSE_RE.finditer(p):
+            if stack:
+                stack.pop()
+        stacks.append(stack.copy())
+    return stacks
+
+
 def slice_sdlxliff(
     header: str,
     pres: list[str],

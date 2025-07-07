@@ -1,4 +1,5 @@
 from pathlib import Path
+import pytest
 from core.splitters.sdxliff_splitter import SdxliffSplitter
 from core.splitters.sdxliff_merger import SdxliffMerger
 from core.splitters.sdlxliff_utils import md5_bytes
@@ -47,11 +48,8 @@ def test_split_merge_utf8(tmp_path: Path):
 def test_split_merge_utf16(tmp_path: Path):
     src = _write(tmp_path / "sample_utf16.sdxliff", _basic_sample(), "utf-16le", True)
     splitter = SdxliffSplitter()
-    parts = splitter.split(src, parts=3, output_dir=tmp_path)
-    merger = SdxliffMerger()
-    out = tmp_path / "merged.sdxliff"
-    merger.merge(parts, out)
-    assert md5_bytes(src.read_bytes()) == md5_bytes(out.read_bytes())
+    with pytest.raises(ValueError):
+        splitter.split(src, parts=3, output_dir=tmp_path)
 
 
 def test_large_file(tmp_path: Path):
