@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Callable, List, Optional, Set
@@ -8,12 +7,10 @@ from typing import Callable, List, Optional, Set
 from lxml import etree
 
 from .sdlxliff_utils import (
-    bom_to_str,
-    md5_bytes,
     parse_sdxliff,
     read_text,
     extract_namespaces,
-    reconstruct_sdxliff,
+    slice_sdxliff,
     write_text,
 )
 
@@ -81,32 +78,19 @@ class SdxliffSplitter:
                     idx += 1
                 assignments.append(indices)
 
-        info = {
-            "bom": bom_to_str(bom),
-            "encoding": encoding,
-            "header": header,
-            "pre_segments": pres,
-            "tail": tail,
-            "original_md5": md5_bytes(filepath.read_bytes()),
-            "parts": [],
-        }
-
         output_dir.mkdir(parents=True, exist_ok=True)
         part_paths: List[Path] = []
         for idx, indices in enumerate(assignments, 1):
-            part_text = reconstruct_sdxliff(header, pres, segments, tail, indices)
+            start = min(indices)
+            end = max(indices) + 1
+            part_text = slice_sdxliff(header, pres, segments, tail, start, end)
             part_name = f"{filepath.stem}_part{idx}of{len(assignments)}{filepath.suffix}"
             part_path = output_dir / part_name
             write_text(part_path, part_text, encoding, bom)
             part_paths.append(part_path)
-            info["parts"].append({"file": part_name, "segment_indexes": sorted(indices)})
             if progress_callback:
                 progress_callback(int(idx / len(assignments) * 100), f"part {idx}")
             if should_stop_callback and should_stop_callback():
                 break
-
-        info_path = output_dir / f"{filepath.name}.split-info.json"
-        with open(info_path, "w", encoding="utf-8") as f:
-            json.dump(info, f, ensure_ascii=False, indent=2)
 
         return part_paths
