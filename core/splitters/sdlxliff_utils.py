@@ -53,6 +53,31 @@ def md5_bytes(data: bytes) -> str:
     return hashlib.md5(data).hexdigest()
 
 
+def extract_namespaces(header: str) -> dict[str, str]:
+    """Extract namespace declarations from the header string.
+
+    Parameters
+    ----------
+    header:
+        The header portion of the SDLXLIFF/SDXLIFF file returned by
+        :func:`parse_sdlxliff`.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping of namespace prefix to URI. The default namespace, if
+        present, is stored under an empty string key.
+    """
+
+    namespaces: dict[str, str] = {}
+    for prefix, uri in re.findall(r"\bxmlns:([\w.-]+)=['\"]([^'\"]+)['\"]", header):
+        namespaces[prefix] = uri
+    m = re.search(r"\bxmlns=['\"]([^'\"]+)['\"]", header)
+    if m:
+        namespaces[""] = m.group(1)
+    return namespaces
+
+
 TRANS_UNIT_RE = re.compile(
     r"<(?:[\w.-]+:)?trans-unit\b[^>]*>.*?</(?:[\w.-]+:)?trans-unit>", re.DOTALL
 )

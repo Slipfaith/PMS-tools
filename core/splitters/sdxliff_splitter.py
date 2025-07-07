@@ -12,6 +12,7 @@ from .sdlxliff_utils import (
     md5_bytes,
     parse_sdxliff,
     read_text,
+    extract_namespaces,
     reconstruct_sdxliff,
     write_text,
 )
@@ -47,8 +48,13 @@ class SdxliffSplitter:
 
         words = []
         parser = etree.XMLParser(remove_blank_text=False, strip_cdata=False)
+        namespaces = extract_namespaces(header)
+        ns_attrs = " ".join(
+            [f'xmlns="{uri}"' if not prefix else f"xmlns:{prefix}=\"{uri}\"" for prefix, uri in namespaces.items()]
+        )
         for seg in segments:
-            elem = etree.fromstring(seg.encode("utf-8"), parser)
+            wrapped = f"<wrapper {ns_attrs}>{seg}</wrapper>"
+            elem = etree.fromstring(wrapped.encode("utf-8"), parser)
             src = elem.find('.//{*}source')
             seg_text = "" if src is None else "".join(src.itertext())
             words.append(count_words(seg_text))
