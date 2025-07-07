@@ -58,5 +58,5 @@ def test_recursive_split_and_merge(tmp_path: Path):
 def test_deep_groups(tmp_path: Path):
     src = _write_sample(tmp_path / "deep.sdxliff", SAMPLE_DEEP)
     service = SplitService()
-    with pytest.raises(ValueError):
-        service.split(src, parts=2)
+    parts = service.split(src, parts=2)
+    assert len(parts) == 1

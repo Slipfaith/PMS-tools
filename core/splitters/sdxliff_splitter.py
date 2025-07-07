@@ -46,6 +46,7 @@ class SdxliffSplitter:
 
         stacks = compute_group_stacks(pres)
         valid_boundaries = [i for i, st in enumerate(stacks) if not st]
+        valid_boundaries = [b for b in valid_boundaries if b <= len(segments)]
 
         words = []
         parser = etree.XMLParser(remove_blank_text=False, strip_cdata=False)
@@ -64,22 +65,20 @@ class SdxliffSplitter:
 
         assignments: List[Set[int]] = []
         if parts is not None:
-            if len(valid_boundaries) - 1 < parts:
-                raise ValueError(
-                    f"Cannot split into {parts} parts without breaking group structure"
-                )
-
             boundaries = [0]
-            used = set(boundaries)
+            last = 0
             for p in range(1, parts):
                 target = int(round(p * total_segments / parts))
-                boundary = next(
-                    b for b in valid_boundaries if b >= target and b not in used
-                )
+                candidates = [b for b in valid_boundaries if b > last]
+                if not candidates:
+                    break
+                boundary = min(candidates, key=lambda b: abs(b - target))
+                if boundary == last:
+                    break
                 boundaries.append(boundary)
-                used.add(boundary)
-            boundaries.append(total_segments)
-            boundaries = sorted(set(boundaries))
+                last = boundary
+            if boundaries[-1] != total_segments:
+                boundaries.append(total_segments)
             for i in range(len(boundaries) - 1):
                 assignments.append(set(range(boundaries[i], boundaries[i + 1])))
         else:

@@ -48,8 +48,8 @@ def test_split_merge_utf8(tmp_path: Path):
 def test_split_merge_utf16(tmp_path: Path):
     src = _write(tmp_path / "sample_utf16.sdxliff", _basic_sample(), "utf-16le", True)
     splitter = SdxliffSplitter()
-    with pytest.raises(ValueError):
-        splitter.split(src, parts=3, output_dir=tmp_path)
+    parts = splitter.split(src, parts=3, output_dir=tmp_path)
+    assert len(parts) == 1
 
 
 def test_large_file(tmp_path: Path):
