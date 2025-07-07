@@ -20,6 +20,7 @@ def test_split_and_merge(tmp_path: Path):
     info = service.analyze(src)
     assert info["segments"] == 2
     assert info["words"] == 3
+    assert info["characters"] == 18
 
     parts = service.split(src, parts=2)
     assert len(parts) == 2
