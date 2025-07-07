@@ -3,9 +3,20 @@ import re
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Callable
+from typing import Callable, List, Optional
 
 from lxml import etree
+
+NS_XLIFF = "urn:oasis:names:tc:xliff:document:1.2"
+SPLIT_NS = "http://pms.tools/sdxliff-split"
+
+
+def _is_group(elem: etree._Element) -> bool:
+    return etree.QName(elem).localname == "group"
+
+
+def _is_trans_unit(elem: etree._Element) -> bool:
+    return etree.QName(elem).localname == "trans-unit"
 
 
 def _read_bom(filepath: Path) -> bool:
@@ -21,6 +32,25 @@ def _compute_file_id(filepath: Path) -> str:
 
 def count_words(text: str) -> int:
     return len(re.findall(r"\w+", text))
+
+
+def _collect_units(body: etree._Element) -> List[dict]:
+    """Return metadata for all trans-unit elements in document order."""
+
+    units = []
+
+    def walk(elem: etree._Element, path: List[str]) -> None:
+        group_count = 0
+        for idx, child in enumerate(list(elem)):
+            if _is_group(child):
+                ident = child.get("id") or f"idx{group_count}"
+                group_count += 1
+                walk(child, path + [ident])
+            elif _is_trans_unit(child):
+                units.append({"element": child, "path": tuple(path), "index": idx})
+
+    walk(body, [])
+    return units
 
 
 class SdxliffSplitter:
@@ -53,11 +83,12 @@ class SdxliffSplitter:
         root = tree.getroot()
         file_elem = root.find(".//{*}file")
         body = file_elem.find(".//{*}body")
-        units = body.findall(".//{*}trans-unit")
-        total_units = len(units)
+
+        unit_infos = _collect_units(body)
+        total_units = len(unit_infos)
         unit_words = []
-        for u in units:
-            src = u.find(".//{*}source")
+        for info in unit_infos:
+            src = info["element"].find(".//{*}source")
             text = "" if src is None else "".join(src.itertext())
             unit_words.append(count_words(text))
         total_words = sum(unit_words)
@@ -86,27 +117,61 @@ class SdxliffSplitter:
         timestamp = datetime.utcnow().isoformat()
         encoding = tree.docinfo.encoding or "utf-8"
 
+        # mark units with part assignment
+        idx_start = 0
+        for part_idx, cnt in enumerate(counts):
+            for i in range(cnt):
+                unit_infos[idx_start + i]["part"] = part_idx
+            idx_start += cnt
+
+        encoding = tree.docinfo.encoding or "utf-8"
         output_paths = []
-        start = 0
-        for idx, count in enumerate(counts):
-            part_units = units[start:start + count]
-            start += count
+
+        def filter_for_part(part_number: int) -> etree.ElementTree:
             new_tree = etree.ElementTree(deepcopy(root))
             new_root = new_tree.getroot()
+            new_body = new_root.find(".//{*}body")
+
+            unit_idx = 0
+
+            def walk(elem: etree._Element, path: List[str]) -> None:
+                nonlocal unit_idx
+                group_counter = 0
+                for idx, child in enumerate(list(elem)):
+                    if _is_group(child):
+                        ident = child.get("id") or f"idx{group_counter}"
+                        group_counter += 1
+                        walk(child, path + [ident])
+                    elif _is_trans_unit(child):
+                        info = unit_infos[unit_idx]
+                        assert info["index"] == idx and info["path"] == tuple(path)
+                        keep = info.get("part") == part_number
+                        unit_idx += 1
+                        if not keep:
+                            elem.remove(child)
+                        else:
+                            child.set(f"{{{SPLIT_NS}}}path", "/".join(path))
+                            child.set(f"{{{SPLIT_NS}}}pos", str(idx))
+
+            walk(new_body, [])
+            return new_tree
+
+        for part_idx in range(parts):
+            new_tree = filter_for_part(part_idx)
+            new_root = new_tree.getroot()
             new_file = new_root.find(".//{*}file")
-            new_body = new_file.find(".//{*}body")
-            for child in list(new_body):
-                new_body.remove(child)
-            for u in part_units:
-                new_body.append(deepcopy(u))
+
+            part_units = [u for u in unit_infos if u.get("part") == part_idx]
+            words_in_part = sum(unit_words[unit_infos.index(u)] for u in part_units)
+
             new_file.set("original_file_id", file_id)
-            new_file.set("part_number", str(idx + 1))
+            new_file.set("part_number", str(part_idx + 1))
             new_file.set("total_parts", str(parts))
             new_file.set("split_timestamp", timestamp)
             new_file.set("segments_in_part", str(len(part_units)))
-            words_in_part = sum(unit_words[start - count:start])
             new_file.set("words_in_part", str(words_in_part))
-            out_name = f"{filepath.stem}_part{idx + 1}of{parts}{filepath.suffix}"
+
+            out_name = f"{filepath.stem}_part{part_idx + 1}of{parts}{filepath.suffix}"
             out_path = output_dir / out_name
             with open(out_path, "wb") as f:
                 if bom:
@@ -114,7 +179,8 @@ class SdxliffSplitter:
                 new_tree.write(f, encoding=encoding, xml_declaration=True)
             output_paths.append(out_path)
             if progress_callback:
-                progress_callback(int((idx + 1) / parts * 100), f"part {idx + 1}")
+                progress_callback(int((part_idx + 1) / parts * 100), f"part {part_idx + 1}")
             if should_stop_callback and should_stop_callback():
                 break
+
         return output_paths
