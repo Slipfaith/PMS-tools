@@ -18,11 +18,13 @@ class SplitService:
         tree = etree.parse(str(filepath), parser)
         units = tree.findall(".//{*}trans-unit")
         word_count = 0
+        char_count = 0
         for u in units:
             src = u.find(".//{*}source")
             text = "" if src is None else "".join(src.itertext())
             word_count += count_words(text)
-        return {"segments": len(units), "words": word_count}
+            char_count += len(text)
+        return {"segments": len(units), "words": word_count, "characters": char_count}
 
     def split(
         self,

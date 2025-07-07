@@ -72,12 +72,15 @@ class SdxliffSplitWindow(QWidget):
         analyze_layout.addStretch()
         tab_layout.addLayout(analyze_layout)
 
-        self.stats_table = QTableWidget(2, 2)
-        self.stats_table.setHorizontalHeaderLabels(["Параметр", "Значение"])
+        self.stats_table = QTableWidget(0, 4)
+        self.stats_table.setHorizontalHeaderLabels([
+            "Файл",
+            "Слов",
+            "Сегментов",
+            "Знаков с пробелами",
+        ])
         self.stats_table.verticalHeader().setVisible(False)
         self.stats_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.stats_table.setItem(0, 0, QTableWidgetItem("Сегментов"))
-        self.stats_table.setItem(1, 0, QTableWidgetItem("Слов"))
         tab_layout.addWidget(self.stats_table)
 
         self.split_btn = QPushButton("Разделить")
@@ -118,10 +121,11 @@ class SdxliffSplitWindow(QWidget):
             return
         try:
             info = self.controller.analyze_sdxliff_file(self.files[0])
-            self.stats_table.setItem(
-                0, 1, QTableWidgetItem(str(info.get("segments", 0)))
-            )
-            self.stats_table.setItem(1, 1, QTableWidgetItem(str(info.get("words", 0))))
+            self.stats_table.setRowCount(1)
+            self.stats_table.setItem(0, 0, QTableWidgetItem(self.files[0].name))
+            self.stats_table.setItem(0, 1, QTableWidgetItem(str(info.get("words", 0))))
+            self.stats_table.setItem(0, 2, QTableWidgetItem(str(info.get("segments", 0))))
+            self.stats_table.setItem(0, 3, QTableWidgetItem(str(info.get("characters", 0))))
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", str(e))
 
@@ -135,6 +139,13 @@ class SdxliffSplitWindow(QWidget):
             kwargs["words"] = self.count_spin.value()
         try:
             out_paths = self.controller.split_sdxliff_file(self.files[0], **kwargs)
+            self.stats_table.setRowCount(len(out_paths))
+            for row, path in enumerate(out_paths):
+                info = self.controller.analyze_sdxliff_file(path)
+                self.stats_table.setItem(row, 0, QTableWidgetItem(path.name))
+                self.stats_table.setItem(row, 1, QTableWidgetItem(str(info.get("words", 0))))
+                self.stats_table.setItem(row, 2, QTableWidgetItem(str(info.get("segments", 0))))
+                self.stats_table.setItem(row, 3, QTableWidgetItem(str(info.get("characters", 0))))
             QMessageBox.information(self, "Готово", f"Создано файлов: {len(out_paths)}")
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", str(e))
