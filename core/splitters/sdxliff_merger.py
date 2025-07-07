@@ -1,19 +1,25 @@
-from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
-from copy import deepcopy
-from collections import defaultdict
-from lxml import etree
+from __future__ import annotations
 
-from .sdxliff_splitter import SPLIT_NS, _is_group, _is_trans_unit
+import json
+from pathlib import Path
+from typing import Callable, Dict, List, Optional
+
+from .sdlxliff_utils import (
+    parse_sdxliff,
+    read_text,
+    reconstruct_sdxliff,
+    write_text,
+    str_to_bom,
+)
 
 
 class SdxliffMerger:
-    """Merge SDXLIFF parts created by ``SdxliffSplitter``."""
+    """Merge SDXLIFF parts produced by :class:`SdxliffSplitter`."""
 
     def merge(
         self,
         part_paths: List[Path],
-        output_path: Path,
+        output_file: Path,
         *,
         progress_callback: Optional[Callable[[int, str], None]] = None,
         should_stop_callback: Optional[Callable[[], bool]] = None,
@@ -21,108 +27,35 @@ class SdxliffMerger:
         if not part_paths:
             raise ValueError("No parts provided")
 
-        parsed_parts: List[Tuple[dict, etree._ElementTree]] = []
-        for p in part_paths:
-            tree = etree.parse(str(p))
-            root = tree.getroot()
-            file_elem = root.find(".//{*}file")
-            meta = {
-                "file_id": file_elem.get("original_file_id"),
-                "part_number": int(file_elem.get("part_number", "0")),
-                "total_parts": int(file_elem.get("total_parts", "0")),
-            }
-            parsed_parts.append((meta, tree))
+        parts_dir = part_paths[0].parent
+        info_files = list(parts_dir.glob('*.split-info.json'))
+        if not info_files:
+            raise FileNotFoundError('split-info.json not found')
+        info = json.loads(info_files[0].read_text(encoding='utf-8'))
 
-        total_parts = parsed_parts[0][0]["total_parts"]
-        file_id = parsed_parts[0][0]["file_id"]
-        if len(parsed_parts) != total_parts:
-            raise ValueError("Missing parts")
-        for meta, _ in parsed_parts:
-            if meta["file_id"] != file_id or meta["total_parts"] != total_parts:
-                raise ValueError("Inconsistent parts")
+        header = info['header']
+        pres = info['pre_segments']
+        tail = info['tail']
+        encoding = info['encoding']
+        bom = str_to_bom(info['bom'])
+        total_segments = len(pres) - 1
 
-        parsed_parts.sort(key=lambda x: x[0]["part_number"])
+        segments: Dict[int, str] = {}
+        for part in info['parts']:
+            part_path = parts_dir / part['file']
+            text, _, _ = read_text(part_path)
+            _, _, segs, _ = parse_sdxliff(text)
+            if len(segs) != len(part['segment_indexes']):
+                raise ValueError('Part segment count mismatch')
+            for idx, seg in zip(part['segment_indexes'], segs):
+                segments[idx] = seg
 
-        base_tree = deepcopy(parsed_parts[0][1])
-        base_root = base_tree.getroot()
-        base_file = base_root.find(".//{*}file")
-        base_body = base_file.find(".//{*}body")
+        if len(segments) != total_segments:
+            raise ValueError('Missing segments for merge')
 
-        def clear_units(elem: etree._Element) -> None:
-            for child in list(elem):
-                if _is_group(child):
-                    clear_units(child)
-                elif _is_trans_unit(child):
-                    elem.remove(child)
-
-        clear_units(base_body)
-
-        units_by_path: Dict[str, List[Tuple[int, etree._Element]]] = defaultdict(list)
-
-        def collect(elem: etree._Element, path: List[str]) -> None:
-            group_counter = 0
-            for idx, child in enumerate(list(elem)):
-                if _is_group(child):
-                    ident = child.get("id") or f"idx{group_counter}"
-                    group_counter += 1
-                    collect(child, path + [ident])
-                elif _is_trans_unit(child):
-                    p = child.get(f"{{{SPLIT_NS}}}path")
-                    pos = child.get(f"{{{SPLIT_NS}}}pos")
-                    gpath = tuple(p.split("/")) if p else tuple(path)
-                    index = int(pos) if pos is not None else idx
-                    units_by_path["/".join(gpath)].append((index, deepcopy(child)))
-
-        for meta, tree in parsed_parts:
-            part_body = tree.getroot().find(".//{*}body")
-            collect(part_body, [])
-
-        def find_group(current: etree._Element, tokens: List[str]) -> etree._Element:
-            elem = current
-            for token in tokens:
-                group_idx = 0
-                found = None
-                for child in elem:
-                    if _is_group(child):
-                        gid = child.get("id")
-                        if gid == token:
-                            found = child
-                            break
-                        if gid is None and token.startswith("idx") and group_idx == int(token[3:]):
-                            found = child
-                            break
-                        group_idx += 1
-                if found is None:
-                    raise ValueError(f"Group path {'/'.join(tokens)} not found")
-                elem = found
-            return elem
-
-        for gpath, items in units_by_path.items():
-            group_elem = find_group(base_body, [t for t in gpath.split("/") if t])
-            items.sort(key=lambda x: x[0])
-            for index, unit in items:
-                unit.attrib.pop(f"{{{SPLIT_NS}}}path", None)
-                unit.attrib.pop(f"{{{SPLIT_NS}}}pos", None)
-                group_elem.insert(index, unit)
-
-        # clean metadata attributes from <file>
-        for attr in [
-            "original_file_id",
-            "part_number",
-            "total_parts",
-            "split_timestamp",
-            "segments_in_part",
-            "words_in_part",
-        ]:
-            if attr in base_file.attrib:
-                base_file.attrib.pop(attr)
-
-        etree.cleanup_namespaces(base_tree)
-
-        encoding = parsed_parts[0][1].docinfo.encoding or "utf-8"
-        with open(output_path, "wb") as f:
-            base_tree.write(f, encoding=encoding, xml_declaration=True)
-
+        ordered = [segments[i] for i in range(total_segments)]
+        merged_text = reconstruct_sdxliff(header, pres, ordered, tail)
+        write_text(output_file, merged_text, encoding, bom)
         if progress_callback:
             progress_callback(100, "merged")
-        return output_path
+        return output_file

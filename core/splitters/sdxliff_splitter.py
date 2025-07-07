@@ -1,63 +1,28 @@
-import hashlib
+from __future__ import annotations
+
+import json
 import re
-from copy import deepcopy
-from datetime import datetime
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Set
 
 from lxml import etree
 
-NS_XLIFF = "urn:oasis:names:tc:xliff:document:1.2"
-SPLIT_NS = "http://pms.tools/sdxliff-split"
-
-
-def _is_group(elem: etree._Element) -> bool:
-    return etree.QName(elem).localname == "group"
-
-
-def _is_trans_unit(elem: etree._Element) -> bool:
-    return etree.QName(elem).localname == "trans-unit"
-
-
-def _read_bom(filepath: Path) -> bool:
-    with open(filepath, 'rb') as f:
-        first = f.read(3)
-    return first == b'\xef\xbb\xbf'
-
-
-def _compute_file_id(filepath: Path) -> str:
-    data = filepath.read_bytes()
-    return hashlib.sha256(data).hexdigest()
+from .sdlxliff_utils import (
+    bom_to_str,
+    md5_bytes,
+    parse_sdxliff,
+    read_text,
+    reconstruct_sdxliff,
+    write_text,
+)
 
 
 def count_words(text: str) -> int:
     return len(re.findall(r"\w+", text))
 
 
-def _collect_units(body: etree._Element) -> List[dict]:
-    """Return metadata for all trans-unit elements in document order."""
-
-    units = []
-
-    def walk(elem: etree._Element, path: List[str]) -> None:
-        group_count = 0
-        for idx, child in enumerate(list(elem)):
-            if _is_group(child):
-                ident = child.get("id") or f"idx{group_count}"
-                group_count += 1
-                walk(child, path + [ident])
-            elif _is_trans_unit(child):
-                units.append({"element": child, "path": tuple(path), "index": idx})
-
-    walk(body, [])
-    return units
-
-
 class SdxliffSplitter:
-    """Split SDXLIFF files preserving structure."""
-
-    def __init__(self):
-        pass
+    """Byte preserving splitter for SDXLIFF files."""
 
     def split(
         self,
@@ -77,110 +42,65 @@ class SdxliffSplitter:
             raise ValueError("words_per_file must be >= 1")
 
         output_dir = output_dir or filepath.parent
-        bom = _read_bom(filepath)
-        parser = etree.XMLParser(remove_blank_text=False)
-        tree = etree.parse(str(filepath), parser)
-        root = tree.getroot()
-        file_elem = root.find(".//{*}file")
-        body = file_elem.find(".//{*}body")
+        text, encoding, bom = read_text(filepath)
+        header, pres, segments, tail = parse_sdxliff(text)
 
-        unit_infos = _collect_units(body)
-        total_units = len(unit_infos)
-        unit_words = []
-        for info in unit_infos:
-            src = info["element"].find(".//{*}source")
-            text = "" if src is None else "".join(src.itertext())
-            unit_words.append(count_words(text))
-        total_words = sum(unit_words)
+        words = []
+        parser = etree.XMLParser(remove_blank_text=False, strip_cdata=False)
+        for seg in segments:
+            elem = etree.fromstring(seg.encode("utf-8"), parser)
+            src = elem.find('.//{*}source')
+            seg_text = "" if src is None else "".join(src.itertext())
+            words.append(count_words(seg_text))
 
-        if parts:
-            base = total_units // parts
-            counts = [base] * parts
-            for i in range(total_units - base * parts):
-                counts[i] += 1
+        total_segments = len(segments)
+
+        assignments: List[Set[int]] = []
+        if parts is not None:
+            base = total_segments // parts
+            remainder = total_segments % parts
+            start = 0
+            for p in range(parts):
+                count = base + (1 if p < remainder else 0)
+                assignments.append(set(range(start, start + count)))
+                start += count
         else:
-            counts = []
-            acc = 0
-            current = 0
-            for w in unit_words:
-                if current >= words_per_file and acc:
-                    counts.append(acc)
-                    acc = 0
-                    current = 0
-                acc += 1
-                current += w
-            if acc:
-                counts.append(acc)
-            parts = len(counts)
+            idx = 0
+            while idx < total_segments:
+                part_words = 0
+                indices: Set[int] = set()
+                while idx < total_segments and (part_words < words_per_file or not indices):
+                    indices.add(idx)
+                    part_words += words[idx]
+                    idx += 1
+                assignments.append(indices)
 
-        file_id = _compute_file_id(filepath)
-        timestamp = datetime.utcnow().isoformat()
-        encoding = tree.docinfo.encoding or "utf-8"
+        info = {
+            "bom": bom_to_str(bom),
+            "encoding": encoding,
+            "header": header,
+            "pre_segments": pres,
+            "tail": tail,
+            "original_md5": md5_bytes(filepath.read_bytes()),
+            "parts": [],
+        }
 
-        # mark units with part assignment
-        idx_start = 0
-        for part_idx, cnt in enumerate(counts):
-            for i in range(cnt):
-                unit_infos[idx_start + i]["part"] = part_idx
-            idx_start += cnt
-
-        encoding = tree.docinfo.encoding or "utf-8"
-        output_paths = []
-
-        def filter_for_part(part_number: int) -> etree.ElementTree:
-            new_tree = etree.ElementTree(deepcopy(root))
-            new_root = new_tree.getroot()
-            new_body = new_root.find(".//{*}body")
-
-            unit_idx = 0
-
-            def walk(elem: etree._Element, path: List[str]) -> None:
-                nonlocal unit_idx
-                group_counter = 0
-                for idx, child in enumerate(list(elem)):
-                    if _is_group(child):
-                        ident = child.get("id") or f"idx{group_counter}"
-                        group_counter += 1
-                        walk(child, path + [ident])
-                    elif _is_trans_unit(child):
-                        info = unit_infos[unit_idx]
-                        assert info["index"] == idx and info["path"] == tuple(path)
-                        keep = info.get("part") == part_number
-                        unit_idx += 1
-                        if not keep:
-                            elem.remove(child)
-                        else:
-                            child.set(f"{{{SPLIT_NS}}}path", "/".join(path))
-                            child.set(f"{{{SPLIT_NS}}}pos", str(idx))
-
-            walk(new_body, [])
-            return new_tree
-
-        for part_idx in range(parts):
-            new_tree = filter_for_part(part_idx)
-            new_root = new_tree.getroot()
-            new_file = new_root.find(".//{*}file")
-
-            part_units = [u for u in unit_infos if u.get("part") == part_idx]
-            words_in_part = sum(unit_words[unit_infos.index(u)] for u in part_units)
-
-            new_file.set("original_file_id", file_id)
-            new_file.set("part_number", str(part_idx + 1))
-            new_file.set("total_parts", str(parts))
-            new_file.set("split_timestamp", timestamp)
-            new_file.set("segments_in_part", str(len(part_units)))
-            new_file.set("words_in_part", str(words_in_part))
-
-            out_name = f"{filepath.stem}_part{part_idx + 1}of{parts}{filepath.suffix}"
-            out_path = output_dir / out_name
-            with open(out_path, "wb") as f:
-                if bom:
-                    f.write(b"\xef\xbb\xbf")
-                new_tree.write(f, encoding=encoding, xml_declaration=True)
-            output_paths.append(out_path)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        part_paths: List[Path] = []
+        for idx, indices in enumerate(assignments, 1):
+            part_text = reconstruct_sdxliff(header, pres, segments, tail, indices)
+            part_name = f"{filepath.stem}_part{idx}of{len(assignments)}{filepath.suffix}"
+            part_path = output_dir / part_name
+            write_text(part_path, part_text, encoding, bom)
+            part_paths.append(part_path)
+            info["parts"].append({"file": part_name, "segment_indexes": sorted(indices)})
             if progress_callback:
-                progress_callback(int((part_idx + 1) / parts * 100), f"part {part_idx + 1}")
+                progress_callback(int(idx / len(assignments) * 100), f"part {idx}")
             if should_stop_callback and should_stop_callback():
                 break
 
-        return output_paths
+        info_path = output_dir / f"{filepath.name}.split-info.json"
+        with open(info_path, "w", encoding="utf-8") as f:
+            json.dump(info, f, ensure_ascii=False, indent=2)
+
+        return part_paths

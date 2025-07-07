@@ -89,3 +89,26 @@ def reconstruct_sdlxliff(header: str, pres: list[str], segs: list[str], tail: st
         parts.append(pres[i + 1])
     parts.append(tail)
     return "".join(parts)
+
+
+# SDXLIFF files share the same basic structure as SDLXLIFF. To avoid code
+# duplication we simply expose aliases that reuse the SDLXLIFF parsing and
+# reconstruction logic. This allows the split/merge logic for both file types to
+# rely on the same byte preserving helpers.
+
+def parse_sdxliff(text: str) -> Tuple[str, list[str], list[str], str]:
+    """Alias of :func:`parse_sdlxliff` for SDXLIFF files."""
+
+    return parse_sdlxliff(text)
+
+
+def reconstruct_sdxliff(
+    header: str,
+    pres: list[str],
+    segs: list[str],
+    tail: str,
+    include: Optional[set[int]] = None,
+) -> str:
+    """Alias of :func:`reconstruct_sdlxliff` for SDXLIFF files."""
+
+    return reconstruct_sdlxliff(header, pres, segs, tail, include)
