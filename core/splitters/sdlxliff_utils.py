@@ -137,3 +137,34 @@ def reconstruct_sdxliff(
     """Alias of :func:`reconstruct_sdlxliff` for SDXLIFF files."""
 
     return reconstruct_sdlxliff(header, pres, segs, tail, include)
+
+
+def slice_sdlxliff(
+    header: str,
+    pres: list[str],
+    segs: list[str],
+    tail: str,
+    start: int,
+    end: int,
+) -> str:
+    """Return a portion of the SDLXLIFF document containing ``segs[start:end]``."""
+
+    parts = [header, pres[start]]
+    for i in range(start, end):
+        parts.append(segs[i])
+        parts.append(pres[i + 1])
+    parts.append(tail)
+    return "".join(parts)
+
+
+def slice_sdxliff(
+    header: str,
+    pres: list[str],
+    segs: list[str],
+    tail: str,
+    start: int,
+    end: int,
+) -> str:
+    """Alias of :func:`slice_sdlxliff` for SDXLIFF files."""
+
+    return slice_sdlxliff(header, pres, segs, tail, start, end)
