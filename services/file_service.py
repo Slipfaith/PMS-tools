@@ -165,7 +165,8 @@ class FileService:
         try:
             from lxml import etree
             from core.splitters.sdxliff_splitter import count_words
-            tree = etree.parse(str(filepath))
+            parser = etree.XMLParser(recover=True)
+            tree = etree.parse(str(filepath), parser)
             units = tree.findall(".//{*}trans-unit")
             words = 0
             for u in units:

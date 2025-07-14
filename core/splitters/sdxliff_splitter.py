@@ -72,7 +72,7 @@ class SdxliffSplitter:
                 pass
 
         bom = _read_bom(filepath)
-        parser = etree.XMLParser(remove_blank_text=False)
+        parser = etree.XMLParser(remove_blank_text=False, recover=True)
         tree = etree.parse(str(filepath), parser)
         root = tree.getroot()
         file_elem = root.find(".//{*}file")

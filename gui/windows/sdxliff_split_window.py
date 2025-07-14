@@ -165,9 +165,10 @@ class SdxliffSplitWindow(QWidget):
         try:
             from lxml import etree
 
+            parser = etree.XMLParser(recover=True)
             metas = []
             for f in files:
-                tree = etree.parse(str(f))
+                tree = etree.parse(str(f), parser)
                 file_elem = tree.getroot().find(".//{*}file")
                 metas.append(
                     (

@@ -36,8 +36,9 @@ class SdxliffMerger:
 
         # parse all
         parts = []
+        parser = etree.XMLParser(recover=True)
         for p in part_paths:
-            tree = etree.parse(str(p))
+            tree = etree.parse(str(p), parser)
             root = tree.getroot()
             file_elem = root.find(".//{*}file")
             body = file_elem.find(".//{*}body")
@@ -58,7 +59,7 @@ class SdxliffMerger:
                 raise ValueError("Inconsistent parts")
         # sort by part_number
         parts.sort(key=lambda x: x[0]['part_number'])
-        base_tree = etree.parse(str(part_paths[0]))
+        base_tree = etree.parse(str(part_paths[0]), parser)
         base_root = base_tree.getroot()
         base_file = base_root.find(".//{*}file")
         base_body = base_file.find(".//{*}body")
