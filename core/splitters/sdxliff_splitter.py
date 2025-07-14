@@ -5,6 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Callable
 
+from .bit_perfect import Splitter as RawSplitter
+
 from lxml import etree
 
 
@@ -47,6 +49,28 @@ class SdxliffSplitter:
             raise ValueError("words_per_file must be >= 1")
 
         output_dir = output_dir or filepath.parent
+
+        # --- Bit-perfect branch -------------------------------------------------
+        if parts is not None and words_per_file is None:
+            try:
+                raw = RawSplitter(filepath.read_bytes())
+                byte_parts = raw.split_by_parts(parts)
+                output_paths = []
+                for idx, data in enumerate(byte_parts):
+                    out_name = f"{filepath.stem}_part{idx + 1}of{parts}{filepath.suffix}"
+                    out_path = output_dir / out_name
+                    with open(out_path, "wb") as f:
+                        f.write(data)
+                    output_paths.append(out_path)
+                    if progress_callback:
+                        progress_callback(int((idx + 1) / parts * 100), f"part {idx + 1}")
+                    if should_stop_callback and should_stop_callback():
+                        break
+                return output_paths
+            except Exception:
+                # fall back to structured splitting if raw splitting fails
+                pass
+
         bom = _read_bom(filepath)
         parser = etree.XMLParser(remove_blank_text=False)
         tree = etree.parse(str(filepath), parser)
