@@ -3,6 +3,8 @@ from typing import List, Optional, Callable
 from copy import deepcopy
 from lxml import etree
 
+from .bit_perfect import Merger as RawMerger
+
 
 class SdxliffMerger:
     """Merge SDXLIFF parts created by ``SdxliffSplitter``."""
@@ -17,6 +19,21 @@ class SdxliffMerger:
     ) -> Path:
         if not part_paths:
             raise ValueError("No parts provided")
+
+        # --- Bit-perfect branch ----------------------------------------------
+        try:
+            first_bytes = part_paths[0].read_bytes()
+            if b"original_file_id" not in first_bytes:
+                merged_bytes = RawMerger([p.read_bytes() for p in part_paths]).merge()
+                with open(output_path, "wb") as f:
+                    f.write(merged_bytes)
+                if progress_callback:
+                    progress_callback(100, "merged")
+                return output_path
+        except Exception:
+            # fall back to structured merge
+            pass
+
         # parse all
         parts = []
         for p in part_paths:
