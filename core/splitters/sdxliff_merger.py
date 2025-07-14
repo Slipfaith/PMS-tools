@@ -1,17 +1,32 @@
-class Merger:
-    """
-    Bit-perfect Merger: склеивает split-файлы SDLXLIFF без изменений.
-    Никакого парсинга, никакого обхода, только склейка bytes.
-    """
+from pathlib import Path
+from typing import Callable, List, Optional
 
-    def __init__(self, parts_bytes: list):
-        """
-        parts_bytes — список файлов-частей, в нужном порядке (каждый bytes)
-        """
-        self.parts = parts_bytes
+from ..io_utils import read_bytes_list, sort_split_filenames
 
-    def merge(self):
-        """
-        Склеивает все части как есть, бит-в-бит, ничего не меняет.
-        """
-        return b"".join(self.parts)
+
+class SdxliffMerger:
+    """Bit-perfect merger that concatenates split SDXLIFF parts."""
+
+    def merge(
+        self,
+        part_paths: List[Path],
+        output_path: Path,
+        *,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
+        should_stop_callback: Optional[Callable[[], bool]] = None,
+    ) -> Path:
+        if not part_paths:
+            raise ValueError("No parts provided")
+
+        ordered = sort_split_filenames([str(p) for p in part_paths])
+        parts = read_bytes_list(ordered)
+
+        with open(output_path, "wb") as out:
+            for idx, chunk in enumerate(parts):
+                out.write(chunk)
+                if progress_callback:
+                    progress_callback(int((idx + 1) / len(parts) * 100), f"part {idx + 1}")
+                if should_stop_callback and should_stop_callback():
+                    break
+
+        return output_path

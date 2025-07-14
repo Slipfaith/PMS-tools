@@ -1,12 +1,34 @@
 import re
+from pathlib import Path
+from typing import Callable, List, Optional
 
-class Splitter:
+from ..io_utils import make_split_filenames, save_bytes_list
+
+
+def count_words(text: str) -> int:
+    """Return the number of words in ``text`` using a simple regex."""
+
+    return len(re.findall(r"\w+", text))
+
+
+class _RawSplitter:
+    """Low level byte splitter used by :class:`SdxliffSplitter`."""
+
     def __init__(self, xml_bytes: bytes):
         self.xml_bytes = xml_bytes
-        # Найдём все <group ...>...</group> с их start/end позициями
-        self.group_matches = list(re.finditer(br'<group\b[\s\S]*?</group>', xml_bytes))
+
+        # Try to split by <group> first. If no groups are found, fall back to
+        # <trans-unit>.  This allows working with simple test files that do not
+        # contain groups while keeping bit-perfect splitting logic.
+        self.group_matches = list(
+            re.finditer(br"<group\b[\s\S]*?</group>", xml_bytes)
+        )
         if not self.group_matches:
-            raise ValueError("Файл не содержит <group>")
+            self.group_matches = list(
+                re.finditer(br"<trans-unit\b[\s\S]*?</trans-unit>", xml_bytes)
+            )
+        if not self.group_matches:
+            raise ValueError("Файл не содержит <group> или <trans-unit>")
 
         self.fragments = self._get_raw_fragments()
 
@@ -50,3 +72,38 @@ class Splitter:
                 frag_idx += 2
             parts.append(b"".join(part))
         return parts
+
+
+class SdxliffSplitter:
+    """High level interface for splitting SDXLIFF files."""
+
+    def split(
+        self,
+        filepath: Path,
+        *,
+        parts: Optional[int] = None,
+        words_per_file: Optional[int] = None,
+        output_dir: Optional[Path] = None,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
+        should_stop_callback: Optional[Callable[[], bool]] = None,
+    ) -> List[Path]:
+        if parts is None:
+            raise ValueError("parts must be specified")
+
+        data = filepath.read_bytes()
+        raw = _RawSplitter(data)
+        chunks = raw.split_by_parts(parts)
+
+        output_dir = output_dir or filepath.parent
+        filenames = make_split_filenames(str(filepath), len(chunks))
+        output_paths = [output_dir / Path(name).name for name in filenames]
+
+        save_bytes_list(chunks, output_paths)
+
+        for idx, _ in enumerate(output_paths):
+            if progress_callback:
+                progress_callback(int((idx + 1) / len(output_paths) * 100), f"part {idx + 1}")
+            if should_stop_callback and should_stop_callback():
+                break
+
+        return output_paths
