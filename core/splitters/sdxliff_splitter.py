@@ -1,120 +1,52 @@
-import hashlib
 import re
-from copy import deepcopy
-from datetime import datetime
-from pathlib import Path
-from typing import List, Optional, Callable
 
-from lxml import etree
+class Splitter:
+    def __init__(self, xml_bytes: bytes):
+        self.xml_bytes = xml_bytes
+        # Найдём все <group ...>...</group> с их start/end позициями
+        self.group_matches = list(re.finditer(br'<group\b[\s\S]*?</group>', xml_bytes))
+        if not self.group_matches:
+            raise ValueError("Файл не содержит <group>")
 
+        self.fragments = self._get_raw_fragments()
 
-def _read_bom(filepath: Path) -> bool:
-    with open(filepath, 'rb') as f:
-        first = f.read(3)
-    return first == b'\xef\xbb\xbf'
+    def _get_raw_fragments(self):
+        """
+        Разбивает файл на: [header/gap0], [group0], [gap1], [group1], ..., [gapN], [footer]
+        gapN всегда соответствует реальному байтовому диапазону между группами!
+        """
+        frags = []
+        prev_end = 0
+        for m in self.group_matches:
+            start, end = m.start(), m.end()
+            frags.append(self.xml_bytes[prev_end:start])   # gap до этой группы (возможно, b"" если группы подряд)
+            frags.append(self.xml_bytes[start:end])        # сама группа
+            prev_end = end
+        frags.append(self.xml_bytes[prev_end:])            # gap после последней группы (footer или пусто)
+        return frags
 
-
-def _compute_file_id(filepath: Path) -> str:
-    data = filepath.read_bytes()
-    return hashlib.sha256(data).hexdigest()
-
-
-def count_words(text: str) -> int:
-    return len(re.findall(r"\w+", text))
-
-
-class SdxliffSplitter:
-    """Split SDXLIFF files preserving structure."""
-
-    def __init__(self):
-        pass
-
-    def split(
-        self,
-        filepath: Path,
-        *,
-        parts: Optional[int] = None,
-        words_per_file: Optional[int] = None,
-        output_dir: Optional[Path] = None,
-        progress_callback: Optional[Callable[[int, str], None]] = None,
-        should_stop_callback: Optional[Callable[[], bool]] = None,
-    ) -> List[Path]:
-        if parts is None and words_per_file is None:
-            raise ValueError("Either parts or words_per_file must be set")
-        if parts is not None and parts < 1:
-            raise ValueError("parts must be >= 1")
-        if words_per_file is not None and words_per_file < 1:
-            raise ValueError("words_per_file must be >= 1")
-
-        output_dir = output_dir or filepath.parent
-        bom = _read_bom(filepath)
-        parser = etree.XMLParser(remove_blank_text=False)
-        tree = etree.parse(str(filepath), parser)
-        root = tree.getroot()
-        file_elem = root.find(".//{*}file")
-        body = file_elem.find(".//{*}body")
-        units = body.findall(".//{*}trans-unit")
-        total_units = len(units)
-        unit_words = []
-        for u in units:
-            src = u.find(".//{*}source")
-            text = "" if src is None else "".join(src.itertext())
-            unit_words.append(count_words(text))
-        total_words = sum(unit_words)
-
-        if parts:
-            base = total_units // parts
-            counts = [base] * parts
-            for i in range(total_units - base * parts):
-                counts[i] += 1
-        else:
-            counts = []
-            acc = 0
-            current = 0
-            for w in unit_words:
-                if current >= words_per_file and acc:
-                    counts.append(acc)
-                    acc = 0
-                    current = 0
-                acc += 1
-                current += w
-            if acc:
-                counts.append(acc)
-            parts = len(counts)
-
-        file_id = _compute_file_id(filepath)
-        timestamp = datetime.utcnow().isoformat()
-        encoding = tree.docinfo.encoding or "utf-8"
-
-        output_paths = []
-        start = 0
-        for idx, count in enumerate(counts):
-            part_units = units[start:start + count]
-            start += count
-            new_tree = etree.ElementTree(deepcopy(root))
-            new_root = new_tree.getroot()
-            new_file = new_root.find(".//{*}file")
-            new_body = new_file.find(".//{*}body")
-            for child in list(new_body):
-                new_body.remove(child)
-            for u in part_units:
-                new_body.append(deepcopy(u))
-            new_file.set("original_file_id", file_id)
-            new_file.set("part_number", str(idx + 1))
-            new_file.set("total_parts", str(parts))
-            new_file.set("split_timestamp", timestamp)
-            new_file.set("segments_in_part", str(len(part_units)))
-            words_in_part = sum(unit_words[start - count:start])
-            new_file.set("words_in_part", str(words_in_part))
-            out_name = f"{filepath.stem}_part{idx + 1}of{parts}{filepath.suffix}"
-            out_path = output_dir / out_name
-            with open(out_path, "wb") as f:
-                if bom:
-                    f.write(b"\xef\xbb\xbf")
-                new_tree.write(f, encoding=encoding, xml_declaration=True)
-            output_paths.append(out_path)
-            if progress_callback:
-                progress_callback(int((idx + 1) / parts * 100), f"part {idx + 1}")
-            if should_stop_callback and should_stop_callback():
-                break
-        return output_paths
+    def split_by_parts(self, num_parts):
+        """
+        Делит файл строго по группам, с сохранением gap'ов byte-в-byte между ними.
+        merge = b''.join(all_parts) даст полный bit-perfect original!
+        """
+        group_count = len(self.group_matches)
+        # Число групп в каждой части
+        groups_per_part = [
+            group_count // num_parts + (1 if x < group_count % num_parts else 0)
+            for x in range(num_parts)
+        ]
+        parts = []
+        frag_idx = 1  # 0 — первый gap/header, 1 — первая group, 2 — gap, 3 — group, ...
+        for part_size in groups_per_part:
+            # Для первой части обязательно добавить header/gap0
+            if frag_idx == 1:
+                part = [self.fragments[0]]  # header/gap0
+            else:
+                part = [self.fragments[frag_idx-1]]  # gap перед текущей группой (может быть b"")
+            for _ in range(part_size):
+                part.append(self.fragments[frag_idx])    # group
+                part.append(self.fragments[frag_idx+1])  # gap после group (может быть b"")
+                frag_idx += 2
+            parts.append(b"".join(part))
+        return parts
