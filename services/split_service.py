@@ -14,7 +14,7 @@ class SplitService:
         self.merger = SdxliffMerger()
 
     def analyze(self, filepath: Path) -> dict:
-        parser = etree.XMLParser(remove_blank_text=False)
+        parser = etree.XMLParser(remove_blank_text=False, recover=True)
         tree = etree.parse(str(filepath), parser)
         units = tree.findall(".//{*}trans-unit")
         word_count = 0
