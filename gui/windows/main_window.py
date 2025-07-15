@@ -852,109 +852,132 @@ class MainWindow(QMainWindow):
         logger.info("Main window closed")
 
 
-def handle_termbase_file(self, filepath: Path):
-    """Обрабатывает терминологическую базу"""
-    try:
-        self.log_message(f"📖 Анализируем TB файл: {filepath.name}")
-
-        settings = self.controller.show_termbase_config_dialog(filepath, self)
-        if settings:
-            self.log_message(f"✅ Настройки TB приняты: {filepath.name}")
-            self.start_termbase_conversion(filepath, settings)
-        else:
-            self.log_message(f"❌ Конвертация TB отменена: {filepath.name}")
-    except Exception as e:
-        error_msg = f"Ошибка обработки TB файла: {e}"
-        self.log_message(f"💥 {error_msg}")
-        logger.exception(error_msg)
-        QMessageBox.critical(
-            self,
-            "Ошибка TB",
-            f"Не удалось обработать файл:\n\n{filepath.name}\n\n{e}"
-        )
-
-
-def start_termbase_conversion(self, filepath: Path, settings):
-    """Запускает конвертацию терминологической базы"""
-    try:
-        is_valid, error_msg = self.controller.validate_termbase_conversion_settings(settings)
-        if not is_valid:
-            QMessageBox.warning(self, "Ошибка настроек", error_msg)
-            return
-
-        options = self.controller.prepare_termbase_conversion_options(settings)
-
-        options.progress_callback = lambda p, msg: self.progress_widget.update_progress(p, f"TB: {msg}", 1, 1)
-        options.should_stop_callback = lambda: not self.is_converting
-
-        self.manager.start_termbase(filepath, options)
-
-        self.is_converting = True
-        self.start_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
-        self.add_files_btn.setEnabled(False)
-        self.add_excel_btn.setEnabled(False)
-        self.split_sdlxliff_btn.setEnabled(False)
-        self.merge_sdlxliff_btn.setEnabled(False)
-
-        self.progress_widget.reset()
-        self.log_message(f"🚀 Начата конвертация TB: {filepath.name}")
-    except Exception as e:
-        error_msg = f"Ошибка запуска TB конвертации: {e}"
-        self.log_message(f"💥 {error_msg}")
-        logger.exception(error_msg)
-        QMessageBox.critical(
-            self,
-            "Ошибка запуска",
-            f"Не удалось запустить конвертацию TB:\n\n{e}"
-        )
-
-
-def on_excel_conversion_finished(self, result):
-    """Обработчик завершения Excel конвертации"""
-    try:
-
-        # Возвращаем UI в обычный режим
-        self.is_converting = False
-        self.start_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
-        self.add_files_btn.setEnabled(True)
-        self.add_excel_btn.setEnabled(True)
-        self.split_sdlxliff_btn.setEnabled(True)
-        self.merge_sdlxliff_btn.setEnabled(True)
-
-        if result.success:
-            # Успешная конвертация
-            stats = result.stats
-
-            self.progress_widget.set_completion_status(True, "Excel конвертация завершена!")
-
-            self.log_message(
-                f"✅ Excel конвертация завершена за {stats.get('conversion_time', 0):.1f}с! "
-                f"Экспортировано: {stats.get('exported_segments', 0)} сегментов")
-
-        else:
-            # Ошибка конвертации
-            self.progress_widget.set_completion_status(False, "Ошибка Excel конвертации")
-
-            error_msg = '; '.join(result.errors) if result.errors else "Неизвестная ошибка"
-            self.log_message(f"❌ Ошибка Excel конвертации: {error_msg}")
-
-            QMessageBox.warning(
+    def handle_termbase_file(self, filepath: Path):
+        """Обрабатывает терминологическую базу"""
+        try:
+            self.log_message(f"📖 Анализируем TB файл: {filepath.name}")
+    
+            settings = self.controller.show_termbase_config_dialog(filepath, self)
+            if settings:
+                self.log_message(f"✅ Настройки TB приняты: {filepath.name}")
+                self.start_termbase_conversion(filepath, settings)
+            else:
+                self.log_message(f"❌ Конвертация TB отменена: {filepath.name}")
+        except Exception as e:
+            error_msg = f"Ошибка обработки TB файла: {e}"
+            self.log_message(f"💥 {error_msg}")
+            logger.exception(error_msg)
+            QMessageBox.critical(
                 self,
-                "Ошибка конвертации",
-                f"Не удалось конвертировать Excel файл:\n\n{error_msg}"
+                "Ошибка TB",
+                f"Не удалось обработать файл:\n\n{filepath.name}\n\n{e}"
             )
-
-    except Exception as e:
-        logger.exception(f"Error in Excel conversion finished handler: {e}")
-
-
-def on_excel_conversion_error(self, error_msg: str):
-    """Обработчик ошибок Excel конвертации"""
-    try:
-
-        # Возвращаем UI в обычный режим
+    
+    
+    def start_termbase_conversion(self, filepath: Path, settings):
+        """Запускает конвертацию терминологической базы"""
+        try:
+            is_valid, error_msg = self.controller.validate_termbase_conversion_settings(settings)
+            if not is_valid:
+                QMessageBox.warning(self, "Ошибка настроек", error_msg)
+                return
+    
+            options = self.controller.prepare_termbase_conversion_options(settings)
+    
+            options.progress_callback = lambda p, msg: self.progress_widget.update_progress(p, f"TB: {msg}", 1, 1)
+            options.should_stop_callback = lambda: not self.is_converting
+    
+            self.manager.start_termbase(filepath, options)
+    
+            self.is_converting = True
+            self.start_btn.setEnabled(False)
+            self.stop_btn.setEnabled(True)
+            self.add_files_btn.setEnabled(False)
+            self.add_excel_btn.setEnabled(False)
+            self.split_sdlxliff_btn.setEnabled(False)
+            self.merge_sdlxliff_btn.setEnabled(False)
+    
+            self.progress_widget.reset()
+            self.log_message(f"🚀 Начата конвертация TB: {filepath.name}")
+        except Exception as e:
+            error_msg = f"Ошибка запуска TB конвертации: {e}"
+            self.log_message(f"💥 {error_msg}")
+            logger.exception(error_msg)
+            QMessageBox.critical(
+                self,
+                "Ошибка запуска",
+                f"Не удалось запустить конвертацию TB:\n\n{e}"
+            )
+    
+    
+    def on_excel_conversion_finished(self, result):
+        """Обработчик завершения Excel конвертации"""
+        try:
+    
+            # Возвращаем UI в обычный режим
+            self.is_converting = False
+            self.start_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
+            self.add_files_btn.setEnabled(True)
+            self.add_excel_btn.setEnabled(True)
+            self.split_sdlxliff_btn.setEnabled(True)
+            self.merge_sdlxliff_btn.setEnabled(True)
+    
+            if result.success:
+                # Успешная конвертация
+                stats = result.stats
+    
+                self.progress_widget.set_completion_status(True, "Excel конвертация завершена!")
+    
+                self.log_message(
+                    f"✅ Excel конвертация завершена за {stats.get('conversion_time', 0):.1f}с! "
+                    f"Экспортировано: {stats.get('exported_segments', 0)} сегментов")
+    
+            else:
+                # Ошибка конвертации
+                self.progress_widget.set_completion_status(False, "Ошибка Excel конвертации")
+    
+                error_msg = '; '.join(result.errors) if result.errors else "Неизвестная ошибка"
+                self.log_message(f"❌ Ошибка Excel конвертации: {error_msg}")
+    
+                QMessageBox.warning(
+                    self,
+                    "Ошибка конвертации",
+                    f"Не удалось конвертировать Excel файл:\n\n{error_msg}"
+                )
+    
+        except Exception as e:
+            logger.exception(f"Error in Excel conversion finished handler: {e}")
+    
+    
+    def on_excel_conversion_error(self, error_msg: str):
+        """Обработчик ошибок Excel конвертации"""
+        try:
+    
+            # Возвращаем UI в обычный режим
+            self.is_converting = False
+            self.start_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
+            self.add_files_btn.setEnabled(True)
+            self.add_excel_btn.setEnabled(True)
+            self.split_sdlxliff_btn.setEnabled(True)
+            self.merge_sdlxliff_btn.setEnabled(True)
+    
+            self.progress_widget.set_error_status(error_msg)
+            self.log_message(f"💥 Критическая ошибка Excel конвертации: {error_msg}")
+    
+            QMessageBox.critical(
+                self,
+                "Критическая ошибка",
+                f"Произошла критическая ошибка при конвертации Excel:\n\n{error_msg}"
+            )
+    
+        except Exception as e:
+            logger.exception(f"Error in Excel error handler: {e}")
+    
+    
+    def on_tb_conversion_finished(self, success: bool, message: str):
+        """Обработка завершения конвертации терминологической базы"""
         self.is_converting = False
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
@@ -962,259 +985,236 @@ def on_excel_conversion_error(self, error_msg: str):
         self.add_excel_btn.setEnabled(True)
         self.split_sdlxliff_btn.setEnabled(True)
         self.merge_sdlxliff_btn.setEnabled(True)
-
-        self.progress_widget.set_error_status(error_msg)
-        self.log_message(f"💥 Критическая ошибка Excel конвертации: {error_msg}")
-
-        QMessageBox.critical(
-            self,
-            "Критическая ошибка",
-            f"Произошла критическая ошибка при конвертации Excel:\n\n{error_msg}"
-        )
-
-    except Exception as e:
-        logger.exception(f"Error in Excel error handler: {e}")
-
-
-def on_tb_conversion_finished(self, success: bool, message: str):
-    """Обработка завершения конвертации терминологической базы"""
-    self.is_converting = False
-    self.start_btn.setEnabled(True)
-    self.stop_btn.setEnabled(False)
-    self.add_files_btn.setEnabled(True)
-    self.add_excel_btn.setEnabled(True)
-    self.split_sdlxliff_btn.setEnabled(True)
-    self.merge_sdlxliff_btn.setEnabled(True)
-
-    if success:
-        self.progress_widget.set_completion_status(True, "TB конвертация завершена!")
-        self.log_message(f"✅ {message}")
-    else:
-        self.progress_widget.set_completion_status(False, "Ошибка TB конвертации")
-        self.log_message(f"❌ {message}")
-        QMessageBox.warning(self, "Ошибка конвертации", message)
-
-
-def on_tb_conversion_error(self, message: str):
-    """Обработчик ошибок TB конвертации"""
-    self.on_tb_conversion_finished(False, message)
-
-
-# ===========================================
-# МЕТОДЫ ДЛЯ SDLXLIFF
-# ===========================================
-
-def handle_sdlxliff_file(self, filepath: Path):
-    """Обрабатывает SDLXLIFF файл"""
-    try:
-        # Проверяем, является ли файл частью
-        if self.controller.is_sdlxliff_part_file(filepath):
-            # Предлагаем найти все части и объединить
+    
+        if success:
+            self.progress_widget.set_completion_status(True, "TB конвертация завершена!")
+            self.log_message(f"✅ {message}")
+        else:
+            self.progress_widget.set_completion_status(False, "Ошибка TB конвертации")
+            self.log_message(f"❌ {message}")
+            QMessageBox.warning(self, "Ошибка конвертации", message)
+    
+    
+    def on_tb_conversion_error(self, message: str):
+        """Обработчик ошибок TB конвертации"""
+        self.on_tb_conversion_finished(False, message)
+    
+    
+    # ===========================================
+    # МЕТОДЫ ДЛЯ SDLXLIFF
+    # ===========================================
+    
+    def handle_sdlxliff_file(self, filepath: Path):
+        """Обрабатывает SDLXLIFF файл"""
+        try:
+            # Проверяем, является ли файл частью
+            if self.controller.is_sdlxliff_part_file(filepath):
+                # Предлагаем найти все части и объединить
+                reply = QMessageBox.question(
+                    self,
+                    "Обнаружена часть SDLXLIFF",
+                    f"Файл '{filepath.name}' является частью разделенного SDLXLIFF.\n\n"
+                    f"Хотите найти все части и объединить их?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+    
+                if reply == QMessageBox.Yes:
+                    # Ищем все части
+                    parts = self.controller.find_sdlxliff_parts(filepath)
+                    if len(parts) < 2:
+                        QMessageBox.warning(
+                            self,
+                            "Части не найдены",
+                            f"Не удалось найти все части файла.\n"
+                            f"Найдено частей: {len(parts)}"
+                        )
+                        return
+    
+                    # Запускаем диалог объединения
+                    self.handle_sdlxliff_merge(parts)
+                return
+    
+            # Обычный SDLXLIFF - предлагаем разделить
             reply = QMessageBox.question(
                 self,
-                "Обнаружена часть SDLXLIFF",
-                f"Файл '{filepath.name}' является частью разделенного SDLXLIFF.\n\n"
-                f"Хотите найти все части и объединить их?",
+                "SDLXLIFF файл",
+                f"Файл '{filepath.name}' является SDLXLIFF файлом.\n\n"
+                f"Вы можете разделить его на несколько частей для распределенного перевода.\n\n"
+                f"Хотите разделить файл?",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.Yes
             )
-
+    
             if reply == QMessageBox.Yes:
-                # Ищем все части
-                parts = self.controller.find_sdlxliff_parts(filepath)
-                if len(parts) < 2:
-                    QMessageBox.warning(
-                        self,
-                        "Части не найдены",
-                        f"Не удалось найти все части файла.\n"
-                        f"Найдено частей: {len(parts)}"
-                    )
-                    return
-
-                # Запускаем диалог объединения
-                self.handle_sdlxliff_merge(parts)
-            return
-
-        # Обычный SDLXLIFF - предлагаем разделить
-        reply = QMessageBox.question(
+                self.handle_sdlxliff_split(filepath)
+    
+        except Exception as e:
+            error_msg = f"Ошибка обработки SDLXLIFF файла: {e}"
+            self.log_message(f"💥 {error_msg}")
+            logger.exception(error_msg)
+    
+            QMessageBox.critical(
+                self,
+                "Ошибка SDLXLIFF",
+                f"Не удалось обработать SDLXLIFF файл:\n\n{filepath.name}\n\n{e}"
+            )
+    
+    
+    def handle_sdlxliff_split(self, filepath: Path):
+        """Обрабатывает разделение SDLXLIFF файла"""
+        try:
+            self.log_message(f"✂️ Анализируем SDLXLIFF файл: {filepath.name}")
+    
+            # Показываем диалог настройки
+            settings = self.controller.show_sdlxliff_split_dialog(filepath, self)
+    
+            if settings:
+                # Пользователь настроил - запускаем разделение
+                self.log_message(f"✅ Настройки разделения приняты: {filepath.name}")
+                self.start_sdlxliff_split(filepath, settings)
+            else:
+                self.log_message(f"❌ Разделение SDLXLIFF отменено: {filepath.name}")
+    
+        except Exception as e:
+            error_msg = f"Ошибка разделения SDLXLIFF: {e}"
+            self.log_message(f"💥 {error_msg}")
+            logger.exception(error_msg)
+    
+            QMessageBox.critical(
+                self,
+                "Ошибка разделения",
+                f"Не удалось разделить SDLXLIFF файл:\n\n{e}"
+            )
+    
+    
+    def handle_sdlxliff_merge(self, filepaths: List[Path]):
+        """Обрабатывает объединение SDLXLIFF файлов"""
+        try:
+            self.log_message(f"🔗 Подготовка к объединению {len(filepaths)} SDLXLIFF файлов")
+    
+            # Показываем диалог настройки
+            settings, ordered_files = self.controller.show_sdlxliff_merge_dialog(filepaths, self)
+    
+            if settings and ordered_files:
+                # Пользователь настроил - запускаем объединение
+                self.log_message(f"✅ Настройки объединения приняты: {len(ordered_files)} файлов")
+                self.start_sdlxliff_merge(ordered_files, settings)
+            else:
+                self.log_message("❌ Объединение SDLXLIFF отменено")
+    
+        except Exception as e:
+            error_msg = f"Ошибка объединения SDLXLIFF: {e}"
+            self.log_message(f"💥 {error_msg}")
+            logger.exception(error_msg)
+    
+            QMessageBox.critical(
+                self,
+                "Ошибка объединения",
+                f"Не удалось объединить SDLXLIFF файлы:\n\n{e}"
+            )
+    
+    
+    def open_sdlxliff_split_dialog(self):
+        """Открывает диалог выбора SDLXLIFF файла для разделения"""
+        file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "SDLXLIFF файл",
-            f"Файл '{filepath.name}' является SDLXLIFF файлом.\n\n"
-            f"Вы можете разделить его на несколько частей для распределенного перевода.\n\n"
-            f"Хотите разделить файл?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes
+            "Выберите SDLXLIFF файл для разделения",
+            "",
+            "SDLXLIFF Files (*.sdlxliff)"
         )
-
-        if reply == QMessageBox.Yes:
-            self.handle_sdlxliff_split(filepath)
-
-    except Exception as e:
-        error_msg = f"Ошибка обработки SDLXLIFF файла: {e}"
-        self.log_message(f"💥 {error_msg}")
-        logger.exception(error_msg)
-
-        QMessageBox.critical(
+    
+        if file_path:
+            self.handle_sdlxliff_split(Path(file_path))
+    
+    
+    def open_sdlxliff_merge_dialog(self):
+        """Открывает диалог выбора SDLXLIFF файлов для объединения"""
+        files, _ = QFileDialog.getOpenFileNames(
             self,
-            "Ошибка SDLXLIFF",
-            f"Не удалось обработать SDLXLIFF файл:\n\n{filepath.name}\n\n{e}"
+            "Выберите SDLXLIFF файлы для объединения",
+            "",
+            "SDLXLIFF Files (*.sdlxliff)"
         )
-
-
-def handle_sdlxliff_split(self, filepath: Path):
-    """Обрабатывает разделение SDLXLIFF файла"""
-    try:
-        self.log_message(f"✂️ Анализируем SDLXLIFF файл: {filepath.name}")
-
-        # Показываем диалог настройки
-        settings = self.controller.show_sdlxliff_split_dialog(filepath, self)
-
-        if settings:
-            # Пользователь настроил - запускаем разделение
-            self.log_message(f"✅ Настройки разделения приняты: {filepath.name}")
-            self.start_sdlxliff_split(filepath, settings)
-        else:
-            self.log_message(f"❌ Разделение SDLXLIFF отменено: {filepath.name}")
-
-    except Exception as e:
-        error_msg = f"Ошибка разделения SDLXLIFF: {e}"
-        self.log_message(f"💥 {error_msg}")
-        logger.exception(error_msg)
-
-        QMessageBox.critical(
-            self,
-            "Ошибка разделения",
-            f"Не удалось разделить SDLXLIFF файл:\n\n{e}"
-        )
-
-
-def handle_sdlxliff_merge(self, filepaths: List[Path]):
-    """Обрабатывает объединение SDLXLIFF файлов"""
-    try:
-        self.log_message(f"🔗 Подготовка к объединению {len(filepaths)} SDLXLIFF файлов")
-
-        # Показываем диалог настройки
-        settings, ordered_files = self.controller.show_sdlxliff_merge_dialog(filepaths, self)
-
-        if settings and ordered_files:
-            # Пользователь настроил - запускаем объединение
-            self.log_message(f"✅ Настройки объединения приняты: {len(ordered_files)} файлов")
-            self.start_sdlxliff_merge(ordered_files, settings)
-        else:
-            self.log_message("❌ Объединение SDLXLIFF отменено")
-
-    except Exception as e:
-        error_msg = f"Ошибка объединения SDLXLIFF: {e}"
-        self.log_message(f"💥 {error_msg}")
-        logger.exception(error_msg)
-
-        QMessageBox.critical(
-            self,
-            "Ошибка объединения",
-            f"Не удалось объединить SDLXLIFF файлы:\n\n{e}"
-        )
-
-
-def open_sdlxliff_split_dialog(self):
-    """Открывает диалог выбора SDLXLIFF файла для разделения"""
-    file_path, _ = QFileDialog.getOpenFileName(
-        self,
-        "Выберите SDLXLIFF файл для разделения",
-        "",
-        "SDLXLIFF Files (*.sdlxliff)"
-    )
-
-    if file_path:
-        self.handle_sdlxliff_split(Path(file_path))
-
-
-def open_sdlxliff_merge_dialog(self):
-    """Открывает диалог выбора SDLXLIFF файлов для объединения"""
-    files, _ = QFileDialog.getOpenFileNames(
-        self,
-        "Выберите SDLXLIFF файлы для объединения",
-        "",
-        "SDLXLIFF Files (*.sdlxliff)"
-    )
-
-    if files and len(files) >= 2:
-        self.handle_sdlxliff_merge([Path(f) for f in files])
-    elif files and len(files) < 2:
-        QMessageBox.warning(
-            self,
-            "Недостаточно файлов",
-            "Для объединения необходимо выбрать минимум 2 файла"
-        )
-
-
-def start_sdlxliff_split(self, filepath: Path, settings):
-    """Запускает разделение SDLXLIFF файла"""
-    try:
-        # Создаем опции
-        from core.base import ConversionOptions
-        options = ConversionOptions()
-
-        # Запускаем worker
-        self.manager.start_sdlxliff_split(filepath, settings, options)
-
-        # Переключаем UI в режим операции
-        self.is_converting = True
-        self.start_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
-        self.add_files_btn.setEnabled(False)
-        self.add_excel_btn.setEnabled(False)
-        self.split_sdlxliff_btn.setEnabled(False)
-        self.merge_sdlxliff_btn.setEnabled(False)
-
-        self.progress_widget.reset()
-        self.log_message(f"🚀 Начато разделение SDLXLIFF: {filepath.name}")
-
-        if settings.by_word_count:
-            self.log_message(f"   📝 Метод: по количеству слов ({settings.words_per_part} слов/часть)")
-        else:
-            self.log_message(f"   📋 Метод: на {settings.parts_count} равных частей")
-
-    except Exception as e:
-        error_msg = f"Ошибка запуска разделения SDLXLIFF: {e}"
-        self.log_message(f"💥 {error_msg}")
-        logger.exception(error_msg)
-
-        QMessageBox.critical(
-            self,
-            "Ошибка запуска",
-            f"Не удалось запустить разделение SDLXLIFF:\n\n{e}"
-        )
-
-
-def start_sdlxliff_merge(self, filepaths: List[Path], settings):
-    """Запускает объединение SDLXLIFF файлов"""
-    try:
-        # Создаем опции
-        from core.base import ConversionOptions
-        options = ConversionOptions()
-
-        # Запускаем worker
-        self.manager.start_sdlxliff_merge(filepaths, settings, options)
-
-        # Переключаем UI в режим операции
-        self.is_converting = True
-        self.start_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
-        self.add_files_btn.setEnabled(False)
-        self.add_excel_btn.setEnabled(False)
-        self.split_sdlxliff_btn.setEnabled(False)
-        self.merge_sdlxliff_btn.setEnabled(False)
-
-        self.progress_widget.reset()
-        self.log_message(f"🚀 Начато объединение {len(filepaths)} SDLXLIFF файлов")
-        self.log_message(f"   ✅ Валидация: {'Да' if settings.validate_parts else 'Нет'}")
-    except Exception as e:
-        error_msg = f"Ошибка запуска объединения SDLXLIFF: {e}"
-        self.log_message(f"💥 {error_msg}")
-        logger.exception(error_msg)
-
-        QMessageBox.critical(
-            self,
-            "Ошибка запуска",
-            f"Не удалось запустить объединение SDLXLIFF:\n\n{e}"
-        )
+    
+        if files and len(files) >= 2:
+            self.handle_sdlxliff_merge([Path(f) for f in files])
+        elif files and len(files) < 2:
+            QMessageBox.warning(
+                self,
+                "Недостаточно файлов",
+                "Для объединения необходимо выбрать минимум 2 файла"
+            )
+    
+    
+    def start_sdlxliff_split(self, filepath: Path, settings):
+        """Запускает разделение SDLXLIFF файла"""
+        try:
+            # Создаем опции
+            from core.base import ConversionOptions
+            options = ConversionOptions()
+    
+            # Запускаем worker
+            self.manager.start_sdlxliff_split(filepath, settings, options)
+    
+            # Переключаем UI в режим операции
+            self.is_converting = True
+            self.start_btn.setEnabled(False)
+            self.stop_btn.setEnabled(True)
+            self.add_files_btn.setEnabled(False)
+            self.add_excel_btn.setEnabled(False)
+            self.split_sdlxliff_btn.setEnabled(False)
+            self.merge_sdlxliff_btn.setEnabled(False)
+    
+            self.progress_widget.reset()
+            self.log_message(f"🚀 Начато разделение SDLXLIFF: {filepath.name}")
+    
+            if settings.by_word_count:
+                self.log_message(f"   📝 Метод: по количеству слов ({settings.words_per_part} слов/часть)")
+            else:
+                self.log_message(f"   📋 Метод: на {settings.parts_count} равных частей")
+    
+        except Exception as e:
+            error_msg = f"Ошибка запуска разделения SDLXLIFF: {e}"
+            self.log_message(f"💥 {error_msg}")
+            logger.exception(error_msg)
+    
+            QMessageBox.critical(
+                self,
+                "Ошибка запуска",
+                f"Не удалось запустить разделение SDLXLIFF:\n\n{e}"
+            )
+    
+    
+    def start_sdlxliff_merge(self, filepaths: List[Path], settings):
+        """Запускает объединение SDLXLIFF файлов"""
+        try:
+            # Создаем опции
+            from core.base import ConversionOptions
+            options = ConversionOptions()
+    
+            # Запускаем worker
+            self.manager.start_sdlxliff_merge(filepaths, settings, options)
+    
+            # Переключаем UI в режим операции
+            self.is_converting = True
+            self.start_btn.setEnabled(False)
+            self.stop_btn.setEnabled(True)
+            self.add_files_btn.setEnabled(False)
+            self.add_excel_btn.setEnabled(False)
+            self.split_sdlxliff_btn.setEnabled(False)
+            self.merge_sdlxliff_btn.setEnabled(False)
+    
+            self.progress_widget.reset()
+            self.log_message(f"🚀 Начато объединение {len(filepaths)} SDLXLIFF файлов")
+            self.log_message(f"   ✅ Валидация: {'Да' if settings.validate_parts else 'Нет'}")
+        except Exception as e:
+            error_msg = f"Ошибка запуска объединения SDLXLIFF: {e}"
+            self.log_message(f"💥 {error_msg}")
+            logger.exception(error_msg)
+    
+            QMessageBox.critical(
+                self,
+                "Ошибка запуска",
+                f"Не удалось запустить объединение SDLXLIFF:\n\n{e}"
+            )
