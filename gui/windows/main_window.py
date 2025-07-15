@@ -544,18 +544,19 @@ class MainWindow(QMainWindow):
             self.merge_sdlxliff_btn.setEnabled(False)
 
             self.progress_widget.reset()
-            self.log_message(f"🚀 Начато объединение {len(filepaths)} SDLXLIFF файлов")
-            self.log_message(f"   ✅ Валидация: {'Да' if settings.validate_parts else 'Нет'}")
+            self.log_message(f"🚀 Начата конвертация Excel: {filepath.name}")
+            self.log_message(f"   📊 Листов: {len(settings.selected_sheets)}")
+            self.log_message(f"   🌐 Языки: {settings.source_language} → {settings.target_language}")
 
         except Exception as e:
-            error_msg = f"Ошибка запуска объединения SDLXLIFF: {e}"
+            error_msg = f"Ошибка запуска Excel конвертации: {e}"
             self.log_message(f"💥 {error_msg}")
             logger.exception(error_msg)
 
             QMessageBox.critical(
                 self,
                 "Ошибка запуска",
-                f"Не удалось запустить объединение SDLXLIFF:\n\n{e}"
+                f"Не удалось запустить конвертацию Excel:\n\n{e}"
             )
 
     def on_sdlxliff_progress(self, progress: int, message: str):
@@ -849,22 +850,6 @@ class MainWindow(QMainWindow):
         self.manager.shutdown()
         event.accept()
         logger.info("Main window closed")
-        xliff_btn.setEnabled(False)
-
-        self.progress_widget.reset()
-        self.log_message(f"🚀 Начата конвертация Excel: {filepath.name}")
-        self.log_message(f"   📊 Листов: {len(settings.selected_sheets)}")
-        self.log_message(f"   🌐 Языки: {settings.source_language} → {settings.target_language}")
-    except Exception as e:
-        error_msg = f"Ошибка запуска Excel конвертации: {e}"
-        self.log_message(f"💥 {error_msg}")
-        logger.exception(error_msg)
-
-    QMessageBox.critical(
-        self,
-        "Ошибка запуска",
-        f"Не удалось запустить конвертацию Excel:\n\n{e}"
-    )
 
 
 def handle_termbase_file(self, filepath: Path):
@@ -1218,4 +1203,18 @@ def start_sdlxliff_merge(self, filepaths: List[Path], settings):
         self.add_files_btn.setEnabled(False)
         self.add_excel_btn.setEnabled(False)
         self.split_sdlxliff_btn.setEnabled(False)
-        self.merge_sdl
+        self.merge_sdlxliff_btn.setEnabled(False)
+
+        self.progress_widget.reset()
+        self.log_message(f"🚀 Начато объединение {len(filepaths)} SDLXLIFF файлов")
+        self.log_message(f"   ✅ Валидация: {'Да' if settings.validate_parts else 'Нет'}")
+    except Exception as e:
+        error_msg = f"Ошибка запуска объединения SDLXLIFF: {e}"
+        self.log_message(f"💥 {error_msg}")
+        logger.exception(error_msg)
+
+        QMessageBox.critical(
+            self,
+            "Ошибка запуска",
+            f"Не удалось запустить объединение SDLXLIFF:\n\n{e}"
+        )
