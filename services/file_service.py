@@ -1,10 +1,11 @@
-# services/file_service.py - ОБНОВЛЕННАЯ ВЕРСИЯ
+# services/file_service.py - ПОЛНАЯ ВЕРСИЯ С ПОДДЕРЖКОЙ SDLXLIFF
 
 import sqlite3
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, Optional, List
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,8 @@ class FileService:
             '.tmx': 'TMX Memory',
             '.xml': 'XML/Termbase',
             '.mtf': 'MultiTerm Format',
-            '.tbx': 'TBX Termbase'
+            '.tbx': 'TBX Termbase',
+            '.sdlxliff': 'SDL XLIFF'
         }
 
     def get_file_info(self, filepath: Path) -> Dict[str, any]:
@@ -40,6 +42,8 @@ class FileService:
                 info['extra_info'] = self._get_sdltm_info(filepath)
             elif filepath.suffix.lower() in ['.xlsx', '.xls']:
                 info['extra_info'] = self._get_excel_info(filepath)
+            elif filepath.suffix.lower() == '.sdlxliff':
+                info['extra_info'] = self._get_sdlxliff_info(filepath)
 
             return info
 
@@ -73,7 +77,8 @@ class FileService:
             '.tmx': '🔄',
             '.xml': '📋',
             '.mtf': '📖',
-            '.tbx': '📖'
+            '.tbx': '📖',
+            '.sdlxliff': '✂️'
         }
         return icons.get(suffix, '📄')
 
@@ -81,20 +86,53 @@ class FileService:
         """Определяет формат файлов для drop area"""
         valid_files = []
         detected_formats = set()
+        sdlxliff_parts = []
 
         for filepath in filepaths:
             path = Path(filepath)
             if path.exists() and path.is_file() and self.is_supported(path):
                 valid_files.append(filepath)
-                detected_formats.add(self.get_format_name(path))
+
+                # Особая обработка для SDLXLIFF частей
+                if path.suffix.lower() == '.sdlxliff' and self.is_sdlxliff_part(path):
+                    sdlxliff_parts.append(path)
+                    detected_formats.add("SDL XLIFF части")
+                else:
+                    detected_formats.add(self.get_format_name(path))
 
         if not valid_files:
             return "Неподдерживаемый формат", []
 
-        if len(detected_formats) == 1:
-            format_name = list(detected_formats)[0]
-        else:
-            format_name = f"Смешанные форматы ({len(detected_formats)})"
+        # Если есть части SDLXLIFF, проверяем, все ли части присутствуют
+        if sdlxliff_parts:
+            # Группируем части по базовому имени
+            parts_groups = {}
+            for part_path in sdlxliff_parts:
+                part_info = self.get_sdlxliff_part_info(part_path)
+                if part_info:
+                    base_name = re.sub(r'\.\d+of\d+\.sdlxliff, '', str(part_path))
+                    if base_name not in parts_groups:
+                        parts_groups[base_name] = {
+                            'total': part_info['total'],
+                            'found': []
+                        }
+                    parts_groups[base_name]['found'].append(part_info['part'])
+
+                    # Формируем информацию о частях
+                    parts_info = []
+                    for base_name, info in parts_groups.items():
+                        found_count = len(info['found'])
+                    total_count = info['total']
+                    if found_count == total_count:
+                        parts_info.append(f"✅ Все {total_count} частей")
+                    else:
+                        parts_info.append(f"⚠️ {found_count} из {total_count} частей")
+
+                    format_name = f"SDL XLIFF части ({', '.join(parts_info)})"
+                    elif len(detected_formats) == 1:
+                    format_name = list(detected_formats)[0]
+                    else:
+                    format_name = f"Смешанные форматы ({len(detected_formats)})"
 
         return format_name, valid_files
 
@@ -154,7 +192,7 @@ class FileService:
             return "Недоступно"
 
     def _get_excel_info(self, filepath: Path) -> str:
-        """ОБНОВЛЕНО: Получает информацию об Excel файле"""
+        """Получает информацию об Excel файле"""
         try:
             import openpyxl
             wb = openpyxl.load_workbook(str(filepath), read_only=True)
@@ -179,23 +217,72 @@ class FileService:
             logger.warning(f"Error analyzing Excel file {filepath}: {e}")
             return "Требует настройки"
 
-    def _normalize_language(self, lang_code: str) -> str:
-        """Нормализует языковой код"""
-        if not lang_code:
-            return "unknown"
+    def _get_sdlxliff_info(self, filepath: Path) -> str:
+        """Получает информацию о SDLXLIFF файле"""
+        try:
+            # Проверяем, является ли файл частью
+            match = re.search(r'\.(\d+)of(\d+)\.sdlxliff, str(filepath), re.IGNORECASE)
+            if match:
+                part = match.group(1)
+            total = match.group(2)
+            return f"Часть {part} из {total}"
+            else:
+            # Пытаемся получить базовую информацию без полного анализа
+            # (чтобы не создавать циклическую зависимость)
+            try:
+                # Быстрая проверка - является ли файл XML
+                with open(filepath, 'rb') as f:
+                    # Читаем первые 1KB для быстрой проверки
+                    header = f.read(1024)
+                    if b'<xliff' in header or b'trans-unit' in header:
+                        # Оцениваем размер для примерного количества сегментов
+                        file_size_mb = filepath.stat().st_size / (1024 * 1024)
+                        estimated_segments = int(file_size_mb * 100)  # Примерная оценка
+                        return f"~{estimated_segments:,} сегментов"
+                    else:
+                        return "Требует анализа"
+            except:
+                return "Требует анализа"
 
-        # Стандартные замены
-        lang_map = {
-            "en": "en-US", "de": "de-DE", "fr": "fr-FR", "it": "it-IT",
-            "es": "es-ES", "pt": "pt-PT", "ru": "ru-RU", "ja": "ja-JP",
-            "ko": "ko-KR", "zh": "zh-CN", "pl": "pl-PL", "tr": "tr-TR"
+    except Exception as e:
+    logger.warning(f"Error analyzing SDLXLIFF file {filepath}: {e}")
+    return "Недоступно"
+
+
+def is_sdlxliff_part(self, filepath: Path) -> bool:
+    """Проверяет, является ли файл частью разделенного SDLXLIFF"""
+    pattern = r'\.\d+of\d+\.sdlxliff
+    return bool(re.search(pattern, str(filepath), re.IGNORECASE))
+
+
+def get_sdlxliff_part_info(self, filepath: Path) -> Optional[Dict[str, int]]:
+    """Извлекает информацию о части SDLXLIFF файла"""
+    match = re.search(r'\.(\d+)of(\d+)\.sdlxliff, str(filepath), re.IGNORECASE)
+    if match:
+        return {
+            'part': int(match.group(1)),
+            'total': int(match.group(2))
         }
+    return None
 
-        code = lang_code.lower().replace("_", "-")
 
-        # Если уже полный код
-        if "-" in code and len(code) == 5:
-            return code
+def _normalize_language(self, lang_code: str) -> str:
+    """Нормализует языковой код"""
+    if not lang_code:
+        return "unknown"
 
-        # Добавляем регион по умолчанию
-        return lang_map.get(code, f"{code}-XX")
+    # Стандартные замены
+    lang_map = {
+        "en": "en-US", "de": "de-DE", "fr": "fr-FR", "it": "it-IT",
+        "es": "es-ES", "pt": "pt-PT", "ru": "ru-RU", "ja": "ja-JP",
+        "ko": "ko-KR", "zh": "zh-CN", "pl": "pl-PL", "tr": "tr-TR"
+    }
+
+    code = lang_code.lower().replace("_", "-")
+
+    # Если уже полный код
+    if "-" in code and len(code) == 5:
+        return code
+
+    # Добавляем регион по умолчанию
+    return lang_map.get(code, f"{code}-XX")

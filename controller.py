@@ -1,8 +1,9 @@
-# controller.py - ОБНОВЛЕННАЯ ВЕРСИЯ
+# controller.py - ПОЛНАЯ ВЕРСИЯ С ПОДДЕРЖКОЙ SDLXLIFF
 
 from pathlib import Path
 from typing import List, Dict, Optional
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +156,7 @@ class MainController:
         return True, "OK"
 
     # ===========================================
-    # НОВЫЕ МЕТОДЫ ДЛЯ РАБОТЫ С EXCEL
+    # МЕТОДЫ ДЛЯ РАБОТЫ С EXCEL
     # ===========================================
 
     def is_excel_file(self, filepath: Path) -> bool:
@@ -387,7 +388,208 @@ class MainController:
             }
 
     # ===========================================
-    # ОБНОВЛЕННЫЕ МЕТОДЫ
+    # МЕТОДЫ ДЛЯ РАБОТЫ С SDLXLIFF
+    # ===========================================
+
+    def is_sdlxliff_file(self, filepath: Path) -> bool:
+        """Проверяет, является ли файл SDLXLIFF"""
+        return filepath.suffix.lower() == '.sdlxliff'
+
+    def is_sdlxliff_part_file(self, filepath: Path) -> bool:
+        """Проверяет, является ли файл частью разделенного SDLXLIFF"""
+        pattern = r'\.\d+of\d+\.sdlxliff$'
+        return bool(re.search(pattern, str(filepath), re.IGNORECASE))
+
+    def find_sdlxliff_parts(self, filepath: Path) -> List[Path]:
+        """Находит все части разделенного SDLXLIFF файла"""
+        # Извлекаем базовое имя и информацию о частях
+        match = re.search(r'(.+)\.(\d+)of(\d+)\.sdlxliff$', str(filepath), re.IGNORECASE)
+        if not match:
+            return []
+
+        base_name = match.group(1)
+        total_parts = int(match.group(3))
+
+        # Ищем все части
+        parts = []
+        for i in range(1, total_parts + 1):
+            part_path = Path(f"{base_name}.{i}of{total_parts}.sdlxliff")
+            if part_path.exists():
+                parts.append(part_path)
+
+        logger.info(f"Found {len(parts)} parts of {total_parts} for {filepath.name}")
+        return parts
+
+    def analyze_sdlxliff_file(self, filepath: Path):
+        """Анализирует SDLXLIFF файл"""
+        try:
+            from core.converters.sdlxliff_converter import SdlxliffConverter
+
+            converter = SdlxliffConverter()
+            analysis = converter.analyze_file(filepath)
+
+            logger.info(f"SDLXLIFF analysis completed: {filepath.name}, valid={analysis.get('valid', False)}")
+            return analysis
+
+        except Exception as e:
+            logger.error(f"Error analyzing SDLXLIFF file {filepath}: {e}")
+            raise
+
+    def show_sdlxliff_split_dialog(self, filepath: Path, parent_widget):
+        """Показывает диалог разделения SDLXLIFF"""
+        try:
+            # Анализируем файл
+            analysis = self.analyze_sdlxliff_file(filepath)
+
+            if not analysis.get('valid', False):
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.critical(
+                    parent_widget,
+                    "Ошибка файла",
+                    f"SDLXLIFF файл недействителен или поврежден:\n{analysis.get('error', 'Неизвестная ошибка')}"
+                )
+                return None
+
+            # Показываем диалог
+            from gui.dialogs.sdlxliff_dialogs import SdlxliffSplitDialog
+            from PySide6.QtWidgets import QDialog
+
+            dialog = SdlxliffSplitDialog(filepath, analysis, parent_widget)
+
+            if dialog.exec() == QDialog.Accepted:
+                settings = dialog.get_settings()
+                logger.info(f"SDLXLIFF split settings accepted for {filepath.name}")
+                return settings
+            else:
+                logger.info(f"SDLXLIFF split cancelled for {filepath.name}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error in SDLXLIFF split dialog for {filepath}: {e}")
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                parent_widget,
+                "Ошибка анализа SDLXLIFF",
+                f"Не удалось проанализировать SDLXLIFF файл:\n\n{e}\n\n"
+                f"Убедитесь, что файл не поврежден."
+            )
+            return None
+
+    def show_sdlxliff_merge_dialog(self, filepaths: List[Path], parent_widget):
+        """Показывает диалог объединения SDLXLIFF"""
+        try:
+            from gui.dialogs.sdlxliff_dialogs import SdlxliffMergeDialog
+            from PySide6.QtWidgets import QDialog
+
+            dialog = SdlxliffMergeDialog(filepaths, parent_widget)
+
+            if dialog.exec() == QDialog.Accepted:
+                settings = dialog.get_settings()
+                ordered_files = dialog.get_ordered_files()
+                logger.info(f"SDLXLIFF merge settings accepted for {len(ordered_files)} files")
+                return settings, ordered_files
+            else:
+                logger.info("SDLXLIFF merge cancelled")
+                return None, None
+
+        except Exception as e:
+            logger.error(f"Error in SDLXLIFF merge dialog: {e}")
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                parent_widget,
+                "Ошибка",
+                f"Не удалось открыть диалог объединения:\n\n{e}"
+            )
+            return None, None
+
+    def validate_sdlxliff_split_settings(self, settings) -> tuple[bool, str]:
+        """Валидирует настройки разделения SDLXLIFF"""
+        try:
+            if not settings:
+                return False, "Настройки не указаны"
+
+            is_valid, error_msg = settings.validate()
+            if not is_valid:
+                return False, error_msg
+
+            return True, "OK"
+
+        except Exception as e:
+            logger.error(f"Error validating SDLXLIFF split settings: {e}")
+            return False, f"Ошибка валидации: {e}"
+
+    def validate_sdlxliff_merge_settings(self, settings, filepaths: List[Path]) -> tuple[bool, str]:
+        """Валидирует настройки объединения SDLXLIFF"""
+        try:
+            if not settings:
+                return False, "Настройки не указаны"
+
+            is_valid, error_msg = settings.validate()
+            if not is_valid:
+                return False, error_msg
+
+            if len(filepaths) < 2:
+                return False, "Для объединения нужно минимум 2 файла"
+
+            # Проверяем существование всех файлов
+            for filepath in filepaths:
+                if not filepath.exists():
+                    return False, f"Файл не найден: {filepath.name}"
+
+            return True, "OK"
+
+        except Exception as e:
+            logger.error(f"Error validating SDLXLIFF merge settings: {e}")
+            return False, f"Ошибка валидации: {e}"
+
+    def get_sdlxliff_file_info(self, filepath: Path) -> Dict:
+        """Получает информацию о SDLXLIFF файле для GUI"""
+        try:
+            analysis = self.analyze_sdlxliff_file(filepath)
+
+            # Проверяем, является ли файл частью
+            is_part = self.is_sdlxliff_part_file(filepath)
+
+            if is_part:
+                match = re.search(r'\.(\d+)of(\d+)\.sdlxliff$', str(filepath), re.IGNORECASE)
+                if match:
+                    part = match.group(1)
+                    total = match.group(2)
+                    extra_info = f"Часть {part} из {total}"
+                else:
+                    extra_info = "Часть файла"
+            else:
+                segments = analysis.get('segments_count', 0) if analysis.get('valid', False) else 0
+                extra_info = f"{segments:,} сегментов" if segments > 0 else "Требует анализа"
+
+            return {
+                'path': filepath,
+                'name': filepath.name,
+                'size_mb': filepath.stat().st_size / (1024 * 1024),
+                'format': 'SDL XLIFF',
+                'format_icon': '✂️',
+                'extra_info': extra_info,
+                'is_supported': True,
+                'is_sdlxliff': True,
+                'is_part': is_part,
+                'analysis': analysis
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting SDLXLIFF file info: {e}")
+            return {
+                'path': filepath,
+                'name': filepath.name,
+                'size_mb': filepath.stat().st_size / (1024 * 1024),
+                'format': 'SDL XLIFF (ошибка)',
+                'format_icon': '⚠️',
+                'extra_info': f"Ошибка анализа: {e}",
+                'is_supported': False,
+                'is_sdlxliff': True
+            }
+
+    # ===========================================
+    # ПРИВАТНЫЕ МЕТОДЫ
     # ===========================================
 
     def _auto_detect_languages_from_files(self, new_files: List[Path]):

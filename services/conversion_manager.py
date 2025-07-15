@@ -31,6 +31,12 @@ class ConversionManager(QObject):
     tb_finished = Signal(bool, str)
     tb_error = Signal(str)
 
+    # Signals for SDLXLIFF operations
+    sdlxliff_progress = Signal(int, str)  # progress, message
+    sdlxliff_log = Signal(str)  # log message
+    sdlxliff_finished = Signal(object)  # ConversionResult
+    sdlxliff_error = Signal(str)  # error message
+
     def __init__(self):
         super().__init__()
         # batch worker
@@ -53,6 +59,7 @@ class ConversionManager(QObject):
 
         self._excel_workers: List[ExcelConversionWorker] = []
         self._tb_workers: List[TbWorker] = []
+        self._sdlxliff_workers: List = []
 
     def start_batch(self, files: List[Path], options, file_languages=None):
         """Start batch conversion."""
@@ -66,6 +73,8 @@ class ConversionManager(QObject):
             worker.stop()
         for worker in list(self._tb_workers):
             worker.terminate()
+        for worker in list(self._sdlxliff_workers):
+            worker.stop()
 
     def start_excel(self, filepath: Path, settings, options):
         """Start Excel conversion in a separate worker."""
@@ -90,6 +99,30 @@ class ConversionManager(QObject):
         self._tb_workers.append(worker)
         worker.start()
 
+    def start_sdlxliff_split(self, filepath: Path, settings, options):
+        """Start SDLXLIFF split operation in a separate worker."""
+        from workers.sdlxliff_worker import SdlxliffSplitWorker
+
+        worker = SdlxliffSplitWorker(filepath, settings, options)
+        worker.finished.connect(self._on_sdlxliff_finished)
+        worker.error.connect(self._on_sdlxliff_error)
+        worker.progress.connect(self.sdlxliff_progress)
+        worker.log_written.connect(self.sdlxliff_log)
+        self._sdlxliff_workers.append(worker)
+        worker.start()
+
+    def start_sdlxliff_merge(self, filepaths: List[Path], settings, options):
+        """Start SDLXLIFF merge operation in a separate worker."""
+        from workers.sdlxliff_worker import SdlxliffMergeWorker
+
+        worker = SdlxliffMergeWorker(filepaths, settings, options)
+        worker.finished.connect(self._on_sdlxliff_finished)
+        worker.error.connect(self._on_sdlxliff_error)
+        worker.progress.connect(self.sdlxliff_progress)
+        worker.log_written.connect(self.sdlxliff_log)
+        self._sdlxliff_workers.append(worker)
+        worker.start()
+
     def _on_tb_finished(self, success: bool, message: str):
         sender = self.sender()
         if sender in self._tb_workers:
@@ -111,6 +144,19 @@ class ConversionManager(QObject):
             self._excel_workers.remove(sender)
         self.excel_conversion_error.emit(message)
 
+    def _on_sdlxliff_finished(self, result):
+        """Handle SDLXLIFF operation completion."""
+        sender = self.sender()
+        if sender in self._sdlxliff_workers:
+            self._sdlxliff_workers.remove(sender)
+        self.sdlxliff_finished.emit(result)
+
+    def _on_sdlxliff_error(self, message: str):
+        """Handle SDLXLIFF operation error."""
+        sender = self.sender()
+        if sender in self._sdlxliff_workers:
+            self._sdlxliff_workers.remove(sender)
+        self.sdlxliff_error.emit(message)
 
     def shutdown(self):
         """Stop workers and close threads."""
@@ -121,4 +167,5 @@ class ConversionManager(QObject):
             worker.wait(1000)
         for worker in list(self._tb_workers):
             worker.wait(1000)
-
+        for worker in list(self._sdlxliff_workers):
+            worker.wait(1000)
