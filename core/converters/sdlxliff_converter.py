@@ -3,7 +3,7 @@
 Обновленный конвертер для работы с SDLXLIFF файлами (разделение/объединение)
 ИСПРАВЛЕНО: Использует мягкую валидацию для работы с реальными файлами
 """
-
+import re
 from pathlib import Path
 from typing import List, Dict, Optional, Iterator
 import logging
@@ -407,7 +407,7 @@ class SdlxliffConverter(StreamingConverter):
                     # Убираем паттерн вида .1of3 и обеспечиваем расширение .sdlxliff
                     import re
                     base_name = filepaths[0].stem
-                    base_name = re.sub(r'\.\d+of\d+, '', base_name)
+                    base_name = re.sub(r'\.\d+of\d+', '', base_name)
                     output_path = filepaths[0].parent / (base_name + "_merged.sdlxliff")
 
                     # Создаем резервную копию если файл существует
