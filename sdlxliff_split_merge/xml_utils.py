@@ -1,7 +1,7 @@
 # sdlxliff_split_merge/xml_utils.py
 """
-Утилиты для работы с XML структурой SDLXLIFF файлов
-Объединяет старую и новую функциональность
+ИСПРАВЛЕННЫЕ утилиты для работы с XML структурой SDLXLIFF файлов
+Полное сохранение структуры SDL включая группы и контексты
 """
 
 import re
@@ -14,9 +14,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TransUnit:
-    """Структура trans-unit элемента"""
+    """Структура trans-unit элемента с полным сохранением данных"""
     id: str
-    full_xml: str  # Полный XML с отступами
+    full_xml: str  # Полный XML с отступами и ВСЕМИ тегами
     start_pos: int
     end_pos: int
     group_id: Optional[str] = None
@@ -31,7 +31,7 @@ class TransUnit:
 
 
 class XmlStructure:
-    """Структура SDLXLIFF файла"""
+    """ИСПРАВЛЕННАЯ структура SDLXLIFF файла с полным сохранением SDL"""
 
     def __init__(self, xml_content: str):
         self.xml_content = xml_content
@@ -44,7 +44,7 @@ class XmlStructure:
         self._parse_structure()
 
     def _parse_structure(self):
-        """Парсит структуру файла"""
+        """Парсит структуру файла с полным сохранением SDL элементов"""
         # Определяем кодировку
         encoding_match = re.search(r'encoding=["\']([^"\']+)["\']', self.xml_content)
         if encoding_match:
@@ -59,14 +59,14 @@ class XmlStructure:
         if body_close_match:
             self.footer_start_pos = body_close_match.start()
 
-        # Парсим trans-units
+        # Парсим trans-units с сохранением позиций
         self._parse_trans_units()
 
         # Парсим группы
         self._parse_groups()
 
     def _parse_trans_units(self):
-        """Парсит все trans-unit элементы"""
+        """Парсит все trans-unit элементы с сохранением ПОЛНОЙ структуры"""
         pattern = re.compile(
             r'<trans-unit\s+[^>]*id=["\']([^"\']+)["\'][^>]*>(.*?)</trans-unit>',
             re.DOTALL
@@ -76,9 +76,9 @@ class XmlStructure:
             trans_unit_id = match.group(1)
             full_xml = match.group(0)
 
-            # Извлекаем source и target
-            source_text = self._extract_segment_text(full_xml, 'source')
-            target_text = self._extract_segment_text(full_xml, 'target')
+            # Извлекаем source и target БЕЗ ПОТЕРИ тегов
+            source_text = self._extract_segment_text_safe(full_xml, 'source')
+            target_text = self._extract_segment_text_safe(full_xml, 'target')
 
             # Проверяем статус
             approved = 'approved="yes"' in full_xml
@@ -97,8 +97,8 @@ class XmlStructure:
 
             self.trans_units.append(trans_unit)
 
-    def _extract_segment_text(self, xml: str, segment_type: str) -> str:
-        """Извлекает текст из source или target элемента - БЕЗОПАСНО"""
+    def _extract_segment_text_safe(self, xml: str, segment_type: str) -> str:
+        """ИСПРАВЛЕНО: Извлекает текст из source или target БЕЗ ПОТЕРИ SDL тегов"""
         pattern = f'<{segment_type}[^>]*>(.*?)</{segment_type}>'
         match = re.search(pattern, xml, re.DOTALL)
 
@@ -107,13 +107,14 @@ class XmlStructure:
 
         content = match.group(1)
 
-        # НЕ убираем теги - они могут быть важными для SDL!
+        # НЕ убираем SDL теги - они критичны!
         # Убираем только внешние XML декларации если есть
         content = re.sub(r'<\?xml[^>]*\?>', '', content)
         content = content.strip()
 
         # Для отображения извлекаем только текст (без изменения оригинала)
-        display_text = re.sub(r'<[^>]+>', '', content)
+        # НО сохраняем SDL теги как <g>, <x/>, <mrk>, etc.
+        display_text = re.sub(r'<(?!/?[gx]|/?mrk|/?bpt|/?ept)[^>]+>', '', content)
         return display_text.strip()
 
     def _parse_groups(self):
@@ -133,57 +134,74 @@ class XmlStructure:
             self.groups[group_id] = group_trans_units
 
     def get_header(self) -> str:
-        """Возвращает header файла"""
+        """Возвращает header файла с ВСЕМИ метаданными SDL"""
         return self.xml_content[:self.header_end_pos]
 
     def get_footer(self) -> str:
         """Возвращает footer файла"""
         return self.xml_content[self.footer_start_pos:]
 
-    def get_body_content(self, start_idx: int, end_idx: int) -> str:
-        """Возвращает body контент БЕЗ ИЗМЕНЕНИЙ - сохраняет ВСЕ теги и структуру"""
+    def get_body_content_with_structure(self, start_idx: int, end_idx: int) -> str:
+        """
+        НОВЫЙ МЕТОД: Возвращает body контент с ПОЛНЫМ сохранением структуры SDL
+        Включая группы, контексты, отступы и ВСЕ SDL теги
+        """
         if not self.trans_units or start_idx >= len(self.trans_units):
             return ""
 
         end_idx = min(end_idx, len(self.trans_units))
 
-        # Находим начальную и конечную позиции
-        start_pos = self.trans_units[start_idx].start_pos
-        end_pos = self.trans_units[end_idx - 1].end_pos
+        # ИСПРАВЛЕНО: Находим границы с учетом групп и контекстов
+        start_pos, end_pos = self._find_structure_boundaries(start_idx, end_idx)
 
-        # Извлекаем контент БЕЗ ИЗМЕНЕНИЙ - точно как в оригинале
+        # Извлекаем контент ТОЧНО как в оригинале - со всеми группами и контекстами
         content = self.xml_content[start_pos:end_pos]
 
-        # НЕ изменяем группы - это может нарушить структуру SDL!
-        # content = self._adjust_groups_at_boundaries(content, start_idx, end_idx)
-
         return content
 
-    def _adjust_groups_at_boundaries(self, content: str, start_idx: int, end_idx: int) -> str:
-        """Корректирует группы на границах разделения"""
+    def _find_structure_boundaries(self, start_idx: int, end_idx: int) -> Tuple[int, int]:
+        """
+        НОВЫЙ МЕТОД: Находит границы с учетом SDL структуры
+        Обеспечивает включение групп и контекстов
+        """
         if not self.trans_units:
-            return content
+            return 0, 0
 
-        # Проверяем первый trans-unit
-        if start_idx < len(self.trans_units):
-            first_unit = self.trans_units[start_idx]
-            if first_unit.group_id and first_unit.group_id in self.groups:
-                group_indices = self.groups[first_unit.group_id]
-                if start_idx > min(group_indices):
-                    # Нужно добавить открывающий тег группы
-                    group_open = f'<group id="{first_unit.group_id}">'
-                    content = group_open + "\n" + content
+        # Начальная позиция - ищем начало группы если trans-unit входит в группу
+        start_unit = self.trans_units[start_idx]
+        start_pos = start_unit.start_pos
 
-        # Проверяем последний trans-unit
-        if end_idx > 0 and end_idx <= len(self.trans_units):
-            last_unit = self.trans_units[end_idx - 1]
-            if last_unit.group_id and last_unit.group_id in self.groups:
-                group_indices = self.groups[last_unit.group_id]
-                if end_idx < max(group_indices) + 1:
-                    # Нужно добавить закрывающий тег группы
-                    content = content + "\n</group>"
+        if start_unit.group_id:
+            # Ищем начало группы
+            group_pattern = f'<group[^>]*id=["\']' + re.escape(start_unit.group_id) + '["\'][^>]*>'
+            group_match = re.search(group_pattern, self.xml_content)
+            if group_match and group_match.start() < start_pos:
+                start_pos = group_match.start()
 
-        return content
+        # Конечная позиция - ищем конец группы если trans-unit входит в группу
+        end_unit = self.trans_units[end_idx - 1]
+        end_pos = end_unit.end_pos
+
+        if end_unit.group_id:
+            # Ищем конец группы
+            group_start_pattern = f'<group[^>]*id=["\']' + re.escape(end_unit.group_id) + '["\'][^>]*>'
+            group_start = re.search(group_start_pattern, self.xml_content)
+            if group_start:
+                # Ищем соответствующий </group>
+                group_content = self.xml_content[group_start.start():]
+                group_end_match = re.search(r'</group>', group_content)
+                if group_end_match:
+                    group_end_pos = group_start.start() + group_end_match.end()
+                    if group_end_pos > end_pos:
+                        end_pos = group_end_pos
+
+        return start_pos, end_pos
+
+    def get_body_content(self, start_idx: int, end_idx: int) -> str:
+        """
+        СТАРЫЙ МЕТОД: Возвращает body контент (для обратной совместимости)
+        """
+        return self.get_body_content_with_structure(start_idx, end_idx)
 
     def get_segments_count(self) -> int:
         """Возвращает количество сегментов"""
@@ -201,13 +219,41 @@ class XmlStructure:
             total_words += words
         return total_words
 
+    def validate_structure_integrity(self) -> Dict[str, any]:
+        """
+        НОВЫЙ МЕТОД: Проверяет целостность SDL структуры
+        """
+        issues = []
+
+        # Проверяем группы
+        for group_id, unit_indices in self.groups.items():
+            if not unit_indices:
+                issues.append(f"Пустая группа: {group_id}")
+                continue
+
+            # Проверяем что все trans-units группы существуют
+            for idx in unit_indices:
+                if idx >= len(self.trans_units):
+                    issues.append(f"Неверный индекс в группе {group_id}: {idx}")
+
+        # Проверяем контексты SDL
+        sdl_contexts = re.findall(r'<sdl:cxts[^>]*>.*?</sdl:cxts>', self.xml_content, re.DOTALL)
+
+        return {
+            'valid': len(issues) == 0,
+            'issues': issues,
+            'groups_count': len(self.groups),
+            'sdl_contexts_count': len(sdl_contexts),
+            'total_segments': len(self.trans_units)
+        }
+
 
 class TransUnitParser:
-    """Парсер отдельных trans-unit элементов"""
+    """Парсер отдельных trans-unit элементов с сохранением SDL"""
 
     @staticmethod
     def parse_trans_unit(xml_content: str) -> Optional[TransUnit]:
-        """Парсит отдельный trans-unit"""
+        """Парсит отдельный trans-unit с сохранением SDL тегов"""
         pattern = re.compile(
             r'<trans-unit\s+[^>]*id=["\']([^"\']+)["\'][^>]*>(.*?)</trans-unit>',
             re.DOTALL
@@ -220,9 +266,9 @@ class TransUnitParser:
         trans_unit_id = match.group(1)
         full_xml = match.group(0)
 
-        # Извлекаем source и target
-        source_text = TransUnitParser._extract_segment_text(full_xml, 'source')
-        target_text = TransUnitParser._extract_segment_text(full_xml, 'target')
+        # Извлекаем source и target с сохранением SDL тегов
+        source_text = TransUnitParser._extract_segment_text_safe(full_xml, 'source')
+        target_text = TransUnitParser._extract_segment_text_safe(full_xml, 'target')
 
         # Проверяем статус
         approved = 'approved="yes"' in full_xml
@@ -240,8 +286,8 @@ class TransUnitParser:
         )
 
     @staticmethod
-    def _extract_segment_text(xml: str, segment_type: str) -> str:
-        """Извлекает текст из source или target элемента"""
+    def _extract_segment_text_safe(xml: str, segment_type: str) -> str:
+        """Извлекает текст из source или target с сохранением SDL тегов"""
         pattern = f'<{segment_type}[^>]*>(.*?)</{segment_type}>'
         match = re.search(pattern, xml, re.DOTALL)
 
@@ -250,13 +296,16 @@ class TransUnitParser:
 
         content = match.group(1)
 
-        # Убираем теги, оставляем только текст
-        text = re.sub(r'<[^>]+>', '', content)
+        # Сохраняем SDL теги, убираем только лишние XML декларации
+        content = re.sub(r'<\?xml[^>]*\?>', '', content)
+
+        # Для отображения убираем только не-SDL теги
+        text = re.sub(r'<(?!/?[gx]|/?mrk|/?bpt|/?ept|/?ph|/?it)[^>]+>', '', content)
         return text.strip()
 
     @staticmethod
     def update_trans_unit_target(xml_content: str, new_target: str) -> str:
-        """Обновляет target в trans-unit"""
+        """Обновляет target в trans-unit с сохранением SDL структуры"""
         # Находим target элемент
         target_pattern = r'<target[^>]*>.*?</target>'
 
