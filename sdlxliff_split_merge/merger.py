@@ -1,6 +1,6 @@
 # sdlxliff_split_merge/merger.py
 """
-Модуль для объединения разделенных SDLXLIFF файлов
+Структурный объединитель SDLXLIFF файлов с поддержкой переводов
 """
 
 import re
@@ -8,211 +8,327 @@ import logging
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 
+from .xml_utils import XmlStructure, TransUnitParser
+from .validator import SdlxliffValidator
+
 logger = logging.getLogger(__name__)
 
 
-class Merger:
+class StructuralMerger:
     """
-    Объединитель разделенных SDLXLIFF файлов с проверкой целостности
+    Структурный объединитель SDLXLIFF файлов
+    Поддерживает объединение переведенных частей с сохранением переводов
     """
 
-    def __init__(self, parts_bytes: List[bytes]):
+    def __init__(self, parts_content: List[str]):
         """
-        Инициализация с содержимым частей
+        Инициализация объединителя
 
         Args:
-            parts_bytes: Список содержимого частей в байтах
+            parts_content: Список содержимого частей как строки
         """
-        self.parts_bytes = parts_bytes
+        self.parts_content = parts_content
+        self.validator = SdlxliffValidator()
+
+        # Валидируем части
+        is_valid, error_msg = self.validator.validate_split_parts(parts_content)
+        if not is_valid:
+            raise ValueError(f"Некорректные части для объединения: {error_msg}")
+
+        # Извлекаем метаданные
         self.parts_metadata = []
-
-        # Извлекаем и проверяем метаданные
-        self._extract_metadata()
-        self._validate_parts()
-
-        logger.info(f"Merger initialized with {len(parts_bytes)} parts")
-
-    def merge(self) -> bytes:
-        """
-        Объединяет части обратно в единый файл
-
-        Returns:
-            Объединенный SDLXLIFF файл в байтах
-        """
-        # Сортируем части по номеру
-        sorted_parts = sorted(
-            zip(self.parts_bytes, self.parts_metadata),
-            key=lambda x: x[1]['part']
-        )
-
-        # Берем header из первой части (без метаданных)
-        first_part_str = sorted_parts[0][0].decode('utf-8')
-        header = self._extract_header_without_metadata(first_part_str)
-
-        # Берем footer из последней части
-        last_part_str = sorted_parts[-1][0].decode('utf-8')
-        footer = self._extract_footer(last_part_str)
-
-        # Собираем все body контенты
-        body_content = []
-
-        for part_bytes, metadata in sorted_parts:
-            part_str = part_bytes.decode('utf-8')
-            body = self._extract_body_content(part_str)
-            body_content.append(body)
-
-        # Объединяем body контенты, убирая дублирующиеся закрывающие/открывающие теги групп
-        merged_body = self._merge_body_contents(body_content)
-
-        # Собираем финальный файл
-        merged_xml = header + merged_body + footer
-
-        logger.info("Merge completed successfully")
-        return merged_xml.encode('utf-8')
-
-    def _extract_metadata(self):
-        """Извлекает метаданные из всех частей"""
-        for part_bytes in self.parts_bytes:
-            part_str = part_bytes.decode('utf-8')
-
-            # Ищем метаданные SDLXLIFF_SPLIT_INFO
-            metadata_match = re.search(
-                r'<!-- SDLXLIFF_SPLIT_INFO:(.*?)-->',
-                part_str,
-                re.DOTALL
-            )
-
-            if not metadata_match:
-                raise ValueError("Часть не содержит метаданных SDLXLIFF_SPLIT_INFO")
-
-            # Парсим метаданные
-            metadata_str = metadata_match.group(1)
-            metadata = {}
-
-            for line in metadata_str.strip().split('\n'):
-                if '=' in line:
-                    key, value = line.strip().split('=', 1)
-                    metadata[key] = value.strip('"')
-
+        for content in parts_content:
+            metadata = self.validator._extract_split_metadata(content)
             self.parts_metadata.append(metadata)
 
-    def _validate_parts(self):
-        """Проверяет целостность и совместимость частей"""
-        if not self.parts_metadata:
-            raise ValueError("Нет метаданных для проверки")
+        # Сортируем части по номерам
+        self.sorted_parts = self._sort_parts()
 
-        # Проверяем GUID
-        guids = set(m.get('guid') for m in self.parts_metadata)
-        if len(guids) > 1:
-            raise ValueError("Части принадлежат разным операциям разделения")
+        logger.info(f"Merger initialized with {len(parts_content)} parts")
 
-        # Проверяем количество частей
-        total_parts = int(self.parts_metadata[0].get('total', 0))
-        if len(self.parts_metadata) != total_parts:
-            raise ValueError(
-                f"Неполный набор частей: найдено {len(self.parts_metadata)}, "
-                f"ожидалось {total_parts}"
-            )
+    def merge(self) -> str:
+        """
+        Объединяет части в единый файл
 
-        # Проверяем номера частей
-        part_numbers = sorted(int(m.get('part', 0)) for m in self.parts_metadata)
-        expected_numbers = list(range(1, total_parts + 1))
+        Returns:
+            Объединенный SDLXLIFF файл как строка
+        """
+        # Получаем базовую структуру из первой части
+        base_structure = self._get_base_structure()
 
-        if part_numbers != expected_numbers:
-            raise ValueError("Пропущены или дублированы номера частей")
+        # Собираем все trans-units с переводами
+        all_trans_units = self._collect_all_trans_units()
 
-        # Проверяем непрерывность trans-unit индексов
-        for i in range(len(self.parts_metadata) - 1):
-            current_last = int(self.parts_metadata[i].get('last-unit', 0))
-            next_first = int(self.parts_metadata[i + 1].get('first-unit', 0))
+        # Создаем объединенный файл
+        merged_content = self._create_merged_file(base_structure, all_trans_units)
 
-            if current_last != next_first - 1:
-                raise ValueError(
-                    f"Разрыв в последовательности trans-unit между "
-                    f"частями {i + 1} и {i + 2}"
-                )
+        # Валидируем результат
+        is_valid, error_msg = self.validator.validate_merged_file(merged_content)
+        if not is_valid:
+            logger.warning(f"Merged file validation warning: {error_msg}")
 
-        logger.info("Parts validation successful")
+        logger.info("Merge completed successfully")
+        return merged_content
 
-    def _extract_header_without_metadata(self, part_str: str) -> str:
-        """Извлекает header без метаданных разделения"""
-        # Находим и удаляем метаданные
-        clean_str = re.sub(
-            r'<!-- SDLXLIFF_SPLIT_INFO:.*?-->\s*',
+    def _sort_parts(self) -> List[Tuple[str, Dict[str, str]]]:
+        """
+        Сортирует части по номерам
+
+        Returns:
+            Список кортежей (content, metadata) отсортированных по номерам
+        """
+        parts_with_metadata = list(zip(self.parts_content, self.parts_metadata))
+
+        # Сортируем по номеру части
+        return sorted(parts_with_metadata, key=lambda x: int(x[1]['part_number']))
+
+    def _get_base_structure(self) -> Dict[str, str]:
+        """
+        Извлекает базовую структуру из первой части
+
+        Returns:
+            Словарь с header и footer
+        """
+        first_part_content = self.sorted_parts[0][0]
+
+        # Удаляем метаданные разделения
+        clean_content = re.sub(
+            r'<!-- SDLXLIFF_SPLIT_METADATA:.*?-->\s*',
             '',
-            part_str,
+            first_part_content,
             flags=re.DOTALL
         )
 
-        # Извлекаем header до <body>
-        body_pos = clean_str.find('<body>') + len('<body>')
-        return clean_str[:body_pos]
+        # Парсим структуру
+        structure = XmlStructure(clean_content)
 
-    def _extract_footer(self, part_str: str) -> str:
-        """Извлекает footer из части"""
-        footer_pos = part_str.find('</body>')
-        return part_str[footer_pos:]
+        return {
+            'header': structure.get_header(),
+            'footer': structure.get_footer(),
+            'encoding': structure.encoding
+        }
 
-    def _extract_body_content(self, part_str: str) -> str:
-        """Извлекает содержимое body из части"""
-        body_start = part_str.find('<body>') + len('<body>')
-        body_end = part_str.find('</body>')
-
-        return part_str[body_start:body_end].strip()
-
-    def _merge_body_contents(self, body_contents: List[str]) -> str:
+    def _collect_all_trans_units(self) -> List[Dict[str, any]]:
         """
-        Объединяет содержимое body, обрабатывая группы
-
-        Args:
-            body_contents: Список содержимого body из каждой части
+        Собирает все trans-units из всех частей с сохранением переводов
 
         Returns:
-            Объединенное содержимое body
+            Список словарей с информацией о trans-units
         """
-        if not body_contents:
-            return ""
+        all_trans_units = []
 
-        # Для первой части берем как есть
-        merged = [body_contents[0]]
+        for part_content, metadata in self.sorted_parts:
+            # Удаляем метаданные
+            clean_content = re.sub(
+                r'<!-- SDLXLIFF_SPLIT_METADATA:.*?-->\s*',
+                '',
+                part_content,
+                flags=re.DOTALL
+            )
 
-        # Для последующих частей проверяем группы на стыках
-        for i in range(1, len(body_contents)):
-            current_content = body_contents[i]
+            # Парсим структуру части
+            structure = XmlStructure(clean_content)
 
-            # Проверяем, есть ли незакрытая группа в конце предыдущей части
-            # и открывающаяся группа в начале текущей части
-            prev_ends_with_group = merged[-1].rstrip().endswith('</group>')
-            curr_starts_with_group = current_content.lstrip().startswith('<group')
+            # Добавляем информацию о части к каждому trans-unit
+            for trans_unit in structure.trans_units:
+                unit_info = {
+                    'trans_unit': trans_unit,
+                    'part_number': int(metadata['part_number']),
+                    'original_index': self._calculate_original_index(trans_unit, metadata)
+                }
+                all_trans_units.append(unit_info)
 
-            # Если предыдущая часть заканчивается </group>, а текущая начинается с <group,
-            # то это разные группы - добавляем как есть
-            if prev_ends_with_group or not curr_starts_with_group:
-                merged.append('\n' + current_content)
-            else:
-                # Возможно, группа была разорвана между частями
-                # Проверяем, нужно ли убрать лишний </group> из конца предыдущей части
-                last_group_close = merged[-1].rfind('</group>')
+        # Сортируем по оригинальному индексу
+        all_trans_units.sort(key=lambda x: x['original_index'])
 
-                # Ищем соответствующий открывающий тег
-                test_content = '\n'.join(merged)
-                open_groups = test_content.count('<group')
-                close_groups = test_content.count('</group>')
+        return all_trans_units
 
-                if close_groups > open_groups:
-                    # Убираем лишний закрывающий тег
-                    merged[-1] = merged[-1][:last_group_close] + merged[-1][last_group_close + 8:]
+    def _calculate_original_index(self, trans_unit, metadata: Dict[str, str]) -> int:
+        """
+        Вычисляет оригинальный индекс trans-unit в исходном файле
 
-                merged.append('\n' + current_content)
+        Args:
+            trans_unit: TransUnit объект
+            metadata: Метаданные части
 
-        return '\n'.join(merged)
+        Returns:
+            Оригинальный индекс
+        """
+        # Находим позицию в текущей части
+        part_content = next(content for content, meta in self.sorted_parts
+                            if meta['part_number'] == metadata['part_number'])
+
+        clean_content = re.sub(
+            r'<!-- SDLXLIFF_SPLIT_METADATA:.*?-->\s*',
+            '',
+            part_content,
+            flags=re.DOTALL
+        )
+
+        structure = XmlStructure(clean_content)
+
+        # Находим индекс в части
+        part_index = None
+        for i, unit in enumerate(structure.trans_units):
+            if unit.id == trans_unit.id:
+                part_index = i
+                break
+
+        if part_index is None:
+            logger.warning(f"Could not find trans-unit {trans_unit.id} in part")
+            return 0
+
+        # Вычисляем оригинальный индекс
+        first_segment_index = int(metadata['first_segment_index'])
+        return first_segment_index + part_index
+
+    def _create_merged_file(self, base_structure: Dict[str, str],
+                            all_trans_units: List[Dict[str, any]]) -> str:
+        """
+        Создает объединенный файл БЕЗ ИЗМЕНЕНИЯ структуры SDL
+        """
+        # Начинаем с header
+        merged_content = base_structure['header']
+
+        # Добавляем все trans-units В ТОЧНОСТИ как они были
+        for unit_info in all_trans_units:
+            trans_unit = unit_info['trans_unit']
+
+            # Добавляем trans-unit БЕЗ ИЗМЕНЕНИЙ отступов и структуры
+            # SDL очень чувствителен к форматированию!
+            merged_content += trans_unit.full_xml
+
+        # Добавляем footer
+        merged_content += base_structure['footer']
+
+        return merged_content
+
+    def _indent_trans_unit(self, xml_content: str, indent_level: int) -> str:
+        """
+        Добавляет правильные отступы к trans-unit
+
+        Args:
+            xml_content: XML содержимое trans-unit
+            indent_level: Уровень отступов
+
+        Returns:
+            XML с правильными отступами
+        """
+        indent = "  " * indent_level
+        lines = xml_content.split('\n')
+
+        # Добавляем отступы к каждой строке
+        indented_lines = []
+        for line in lines:
+            if line.strip():
+                indented_lines.append(indent + line.strip())
+
+        return '\n'.join(indented_lines)
 
     def get_merge_info(self) -> Dict[str, any]:
-        """Возвращает информацию об объединении"""
+        """
+        Возвращает информацию об объединении
+
+        Returns:
+            Словарь с информацией
+        """
+        if not self.parts_metadata:
+            return {}
+
+        first_metadata = self.parts_metadata[0]
+
+        # Подсчитываем статистику
+        total_segments = 0
+        total_words = 0
+        translated_segments = 0
+
+        for part_content, metadata in self.sorted_parts:
+            clean_content = re.sub(
+                r'<!-- SDLXLIFF_SPLIT_METADATA:.*?-->\s*',
+                '',
+                part_content,
+                flags=re.DOTALL
+            )
+
+            structure = XmlStructure(clean_content)
+            total_segments += structure.get_segments_count()
+            total_words += structure.get_word_count()
+            translated_segments += structure.get_translated_count()
+
         return {
-            'parts_count': len(self.parts_bytes),
-            'guid': self.parts_metadata[0].get('guid') if self.parts_metadata else None,
-            'original_name': self.parts_metadata[0].get('original-name') if self.parts_metadata else None,
-            'total_units': self.parts_metadata[-1].get('last-unit') if self.parts_metadata else None,
-            'merged_at': datetime.utcnow().isoformat()
+            'split_id': first_metadata.get('split_id'),
+            'original_name': first_metadata.get('original_name'),
+            'parts_count': len(self.sorted_parts),
+            'total_segments': total_segments,
+            'total_words': total_words,
+            'translated_segments': translated_segments,
+            'translation_progress': (translated_segments / total_segments * 100) if total_segments > 0 else 0,
+            'merged_at': datetime.utcnow().isoformat() + "Z",
+            'encoding': first_metadata.get('encoding', 'utf-8')
         }
+
+    def get_translation_stats(self) -> Dict[str, any]:
+        """
+        Возвращает детальную статистику переводов
+
+        Returns:
+            Словарь со статистикой
+        """
+        stats = {
+            'total_segments': 0,
+            'translated_segments': 0,
+            'approved_segments': 0,
+            'empty_segments': 0,
+            'parts_stats': []
+        }
+
+        for part_content, metadata in self.sorted_parts:
+            clean_content = re.sub(
+                r'<!-- SDLXLIFF_SPLIT_METADATA:.*?-->\s*',
+                '',
+                part_content,
+                flags=re.DOTALL
+            )
+
+            structure = XmlStructure(clean_content)
+
+            part_stats = {
+                'part_number': int(metadata['part_number']),
+                'segments_count': structure.get_segments_count(),
+                'translated_count': structure.get_translated_count(),
+                'approved_count': sum(1 for unit in structure.trans_units if unit.approved),
+                'empty_count': sum(1 for unit in structure.trans_units if not unit.target_text.strip())
+            }
+
+            stats['parts_stats'].append(part_stats)
+            stats['total_segments'] += part_stats['segments_count']
+            stats['translated_segments'] += part_stats['translated_count']
+            stats['approved_segments'] += part_stats['approved_count']
+            stats['empty_segments'] += part_stats['empty_count']
+
+        return stats
+
+    def validate_translation_completeness(self) -> Tuple[bool, List[str]]:
+        """
+        Проверяет полноту переводов
+
+        Returns:
+            Кортеж (is_complete, missing_segments_ids)
+        """
+        missing_segments = []
+
+        for part_content, metadata in self.sorted_parts:
+            clean_content = re.sub(
+                r'<!-- SDLXLIFF_SPLIT_METADATA:.*?-->\s*',
+                '',
+                part_content,
+                flags=re.DOTALL
+            )
+
+            structure = XmlStructure(clean_content)
+
+            for trans_unit in structure.trans_units:
+                if not trans_unit.target_text.strip():
+                    missing_segments.append(trans_unit.id)
+
+        return len(missing_segments) == 0, missing_segments
