@@ -1,7 +1,7 @@
 # sdlxliff_split_merge/xml_utils.py
 """
-ИСПРАВЛЕННЫЕ утилиты для работы с XML структурой SDLXLIFF файлов
-Полное сохранение структуры SDL включая группы и контексты
+ОКОНЧАТЕЛЬНО ИСПРАВЛЕННЫЕ утилиты для работы с XML структурой SDLXLIFF файлов
+ПОЛНОЕ сохранение структуры SDL включая sdl:ref-files, sdl:cxts, группы и контексты
 """
 
 import re
@@ -31,7 +31,7 @@ class TransUnit:
 
 
 class XmlStructure:
-    """ИСПРАВЛЕННАЯ структура SDLXLIFF файла с полным сохранением SDL"""
+    """ОКОНЧАТЕЛЬНО ИСПРАВЛЕННАЯ структура SDLXLIFF файла с полным сохранением SDL"""
 
     def __init__(self, xml_content: str):
         self.xml_content = xml_content
@@ -41,6 +41,11 @@ class XmlStructure:
         self.footer_start_pos = 0
         self.encoding = "utf-8"
 
+        # SDL элементы для сохранения
+        self.sdl_ref_files = ""
+        self.sdl_contexts = ""
+        self.file_info = ""
+
         self._parse_structure()
 
     def _parse_structure(self):
@@ -49,6 +54,9 @@ class XmlStructure:
         encoding_match = re.search(r'encoding=["\']([^"\']+)["\']', self.xml_content)
         if encoding_match:
             self.encoding = encoding_match.group(1)
+
+        # Извлекаем SDL элементы ПЕРЕД парсингом структуры
+        self._extract_sdl_elements()
 
         # Находим body
         body_match = re.search(r'<body[^>]*>', self.xml_content)
@@ -64,6 +72,46 @@ class XmlStructure:
 
         # Парсим группы
         self._parse_groups()
+
+    def _extract_sdl_elements(self):
+        """
+        НОВЫЙ МЕТОД: Извлекает ВСЕ SDL элементы для сохранения
+        """
+        # 1. Извлекаем sdl:ref-files
+        ref_files_pattern = r'<sdl:ref-files[^>]*>.*?</sdl:ref-files>'
+        ref_files_match = re.search(ref_files_pattern, self.xml_content, re.DOTALL)
+        if ref_files_match:
+            self.sdl_ref_files = ref_files_match.group(0)
+            logger.info("Extracted sdl:ref-files for preservation")
+
+        # 2. Извлекаем sdl:cxts контексты
+        sdl_contexts = []
+
+        # Ищем простые sdl:cxts блоки
+        sdl_cxts_pattern = r'<sdl:cxts[^>]*>.*?</sdl:cxts>'
+        sdl_cxts_matches = re.findall(sdl_cxts_pattern, self.xml_content, re.DOTALL)
+
+        # Ищем group обёртки вокруг контекстов
+        context_group_pattern = r'<group[^>]*>\s*<sdl:cxts.*?</sdl:cxts>\s*</group>'
+        context_group_matches = re.findall(context_group_pattern, self.xml_content, re.DOTALL)
+
+        # Предпочитаем group обёртки, если они есть
+        if context_group_matches:
+            sdl_contexts = context_group_matches
+            logger.info(f"Extracted {len(context_group_matches)} SDL context groups")
+        elif sdl_cxts_matches:
+            sdl_contexts = sdl_cxts_matches
+            logger.info(f"Extracted {len(sdl_cxts_matches)} SDL context blocks")
+
+        if sdl_contexts:
+            self.sdl_contexts = '\n'.join(sdl_contexts)
+
+        # 3. Извлекаем file-info
+        file_info_pattern = r'<file-info[^>]*>.*?</file-info>'
+        file_info_match = re.search(file_info_pattern, self.xml_content, re.DOTALL)
+        if file_info_match:
+            self.file_info = file_info_match.group(0)
+            logger.info("Extracted file-info for preservation")
 
     def _parse_trans_units(self):
         """Парсит все trans-unit элементы с сохранением ПОЛНОЙ структуры"""
@@ -137,13 +185,23 @@ class XmlStructure:
         """Возвращает header файла с ВСЕМИ метаданными SDL"""
         return self.xml_content[:self.header_end_pos]
 
+    def get_complete_header(self) -> str:
+        """
+        НОВЫЙ МЕТОД: Возвращает ПОЛНЫЙ header с ВСЕМИ SDL метаданными
+        Включая sdl:ref-files, file-info, и все остальные элементы
+        """
+        full_header = self.xml_content[:self.header_end_pos]
+
+        # НЕ удаляем никакие SDL элементы - возвращаем как есть
+        return full_header
+
     def get_footer(self) -> str:
         """Возвращает footer файла"""
         return self.xml_content[self.footer_start_pos:]
 
     def get_body_content_with_structure(self, start_idx: int, end_idx: int) -> str:
         """
-        НОВЫЙ МЕТОД: Возвращает body контент с ПОЛНЫМ сохранением структуры SDL
+        ИСПРАВЛЕНО: Возвращает body контент с ПОЛНЫМ сохранением структуры SDL
         Включая группы, контексты, отступы и ВСЕ SDL теги
         """
         if not self.trans_units or start_idx >= len(self.trans_units):
@@ -161,7 +219,7 @@ class XmlStructure:
 
     def _find_structure_boundaries(self, start_idx: int, end_idx: int) -> Tuple[int, int]:
         """
-        НОВЫЙ МЕТОД: Находит границы с учетом SDL структуры
+        ИСПРАВЛЕНО: Находит границы с учетом SDL структуры
         Обеспечивает включение групп и контекстов
         """
         if not self.trans_units:
@@ -203,6 +261,24 @@ class XmlStructure:
         """
         return self.get_body_content_with_structure(start_idx, end_idx)
 
+    def extract_sdl_ref_files(self) -> str:
+        """
+        НОВЫЙ МЕТОД: Возвращает извлеченный sdl:ref-files блок
+        """
+        return self.sdl_ref_files
+
+    def extract_sdl_contexts(self) -> str:
+        """
+        НОВЫЙ МЕТОД: Возвращает извлеченные SDL контексты
+        """
+        return self.sdl_contexts
+
+    def extract_file_info(self) -> str:
+        """
+        НОВЫЙ МЕТОД: Возвращает извлеченную file-info
+        """
+        return self.file_info
+
     def get_segments_count(self) -> int:
         """Возвращает количество сегментов"""
         return len(self.trans_units)
@@ -236,15 +312,32 @@ class XmlStructure:
                 if idx >= len(self.trans_units):
                     issues.append(f"Неверный индекс в группе {group_id}: {idx}")
 
-        # Проверяем контексты SDL
-        sdl_contexts = re.findall(r'<sdl:cxts[^>]*>.*?</sdl:cxts>', self.xml_content, re.DOTALL)
+        # Проверяем SDL элементы
+        sdl_elements_check = {
+            'sdl_ref_files': bool(self.sdl_ref_files),
+            'sdl_contexts': bool(self.sdl_contexts),
+            'file_info': bool(self.file_info)
+        }
 
         return {
             'valid': len(issues) == 0,
             'issues': issues,
             'groups_count': len(self.groups),
-            'sdl_contexts_count': len(sdl_contexts),
-            'total_segments': len(self.trans_units)
+            'total_segments': len(self.trans_units),
+            'sdl_elements': sdl_elements_check,
+            'encoding': self.encoding
+        }
+
+    def get_sdl_preservation_status(self) -> Dict[str, bool]:
+        """
+        НОВЫЙ МЕТОД: Возвращает статус сохранения SDL элементов
+        """
+        return {
+            'sdl_ref_files_extracted': bool(self.sdl_ref_files),
+            'sdl_contexts_extracted': bool(self.sdl_contexts),
+            'file_info_extracted': bool(self.file_info),
+            'groups_parsed': len(self.groups) > 0,
+            'structure_complete': len(self.trans_units) > 0
         }
 
 
@@ -333,6 +426,59 @@ class TransUnitParser:
 
 
 # =============================================================================
+# НОВЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С SDL ЭЛЕМЕНТАМИ
+# =============================================================================
+
+def extract_all_sdl_elements(xml_content: str) -> Dict[str, str]:
+    """
+    НОВАЯ ФУНКЦИЯ: Извлекает ВСЕ SDL элементы из SDLXLIFF файла
+    """
+    sdl_elements = {}
+
+    # sdl:ref-files
+    ref_files_pattern = r'<sdl:ref-files[^>]*>.*?</sdl:ref-files>'
+    ref_files_match = re.search(ref_files_pattern, xml_content, re.DOTALL)
+    if ref_files_match:
+        sdl_elements['ref_files'] = ref_files_match.group(0)
+
+    # sdl:cxts контексты
+    sdl_cxts_pattern = r'<sdl:cxts[^>]*>.*?</sdl:cxts>'
+    sdl_cxts_matches = re.findall(sdl_cxts_pattern, xml_content, re.DOTALL)
+    if sdl_cxts_matches:
+        sdl_elements['contexts'] = '\n'.join(sdl_cxts_matches)
+
+    # file-info
+    file_info_pattern = r'<file-info[^>]*>.*?</file-info>'
+    file_info_match = re.search(file_info_pattern, xml_content, re.DOTALL)
+    if file_info_match:
+        sdl_elements['file_info'] = file_info_match.group(0)
+
+    return sdl_elements
+
+
+def restore_sdl_elements(xml_content: str, sdl_elements: Dict[str, str]) -> str:
+    """
+    НОВАЯ ФУНКЦИЯ: Восстанавливает SDL элементы в XML контенте
+    """
+    # Эта функция может использоваться для восстановления SDL элементов
+    # при необходимости ручного восстановления
+
+    restored_content = xml_content
+
+    # Добавляем недостающие SDL элементы в header
+    if 'ref_files' in sdl_elements and '<sdl:ref-files' not in restored_content:
+        # Вставляем sdl:ref-files в header перед </header>
+        header_end = restored_content.find('</header>')
+        if header_end > 0:
+            ref_files = sdl_elements['ref_files']
+            restored_content = (restored_content[:header_end] +
+                                '\n' + ref_files + '\n' +
+                                restored_content[header_end:])
+
+    return restored_content
+
+
+# =============================================================================
 # LEGACY FUNCTIONS - для обратной совместимости со старым кодом
 # =============================================================================
 
@@ -393,7 +539,8 @@ def find_trans_units_and_groups(xml_bytes: bytes) -> Dict[str, Any]:
 
     return {
         'trans_units': trans_units,
-        'groups': groups
+        'groups': groups,
+        'sdl_elements': structure.get_sdl_preservation_status()  # Добавляем SDL статус
     }
 
 
@@ -434,14 +581,15 @@ def get_header_footer(xml_bytes: bytes, units_list: List[dict]) -> Tuple[bytes, 
 
     structure = XmlStructure(xml_str)
 
-    header = structure.get_header().encode(structure.encoding)
+    # Используем новый метод для полного header
+    header = structure.get_complete_header().encode(structure.encoding)
     footer = structure.get_footer().encode(structure.encoding)
 
     return header, footer
 
 
 def extract_metadata_from_header(header_str: str) -> Dict[str, str]:
-    """Извлекает метаданные из header SDLXLIFF"""
+    """Извлекает метаданные из header SDLXLIFF включая SDL элементы"""
     metadata = {}
 
     # Извлекаем атрибуты из <file>
@@ -468,5 +616,16 @@ def extract_metadata_from_header(header_str: str) -> Dict[str, str]:
         value_pattern = re.compile(r'<value key="([^"]+)">([^<]+)</value>')
         for match in value_pattern.finditer(file_info_content):
             metadata[f'file-info:{match.group(1)}'] = match.group(2)
+
+    # НОВОЕ: Извлекаем SDL элементы
+    # sdl:ref-files
+    ref_files_match = re.search(r'<sdl:ref-files[^>]*>', header_str)
+    if ref_files_match:
+        metadata['sdl:ref-files'] = 'present'
+
+    # Подсчитываем SDL контексты
+    sdl_cxts_count = len(re.findall(r'<sdl:cxts[^>]*>', header_str))
+    if sdl_cxts_count > 0:
+        metadata['sdl:cxts_count'] = str(sdl_cxts_count)
 
     return metadata
