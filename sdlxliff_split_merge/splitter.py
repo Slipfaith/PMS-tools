@@ -14,6 +14,8 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 import logging
 
+from .diagnostics import take_structure_snapshot, compare_snapshots, log_lost_elements
+
 from .xml_utils import XmlStructure
 from .validator import SdlxliffValidator
 
@@ -55,6 +57,9 @@ class StructuralSplitter:
         logger.info(f"Final splitter initialized: {self.structure.get_segments_count()} segments")
         logger.info(f"SDL elements preserved: {list(self.sdl_elements.keys())}")
 
+        # Take initial snapshot for diagnostics
+        self._original_snapshot = take_structure_snapshot(xml_content)
+
     def split(self, parts_count: int) -> List[str]:
         """
         ФИНАЛЬНОЕ разделение с абсолютным сохранением SDL структуры
@@ -85,6 +90,12 @@ class StructuralSplitter:
             if not is_valid:
                 logger.warning(f"Часть {i + 1} имеет предупреждения XML: {error_msg}")
                 # Не прерываем выполнение, только логируем предупреждение
+
+            # Diagnostics: check what elements were preserved in this part
+            part_snapshot = take_structure_snapshot(part_content)
+            lost = compare_snapshots(self._original_snapshot, part_snapshot)
+            if any(lost.values()):
+                log_lost_elements(lost, self.xml_content)
 
             parts.append(part_content)
 

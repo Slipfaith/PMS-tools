@@ -8,6 +8,8 @@
 import re
 import logging
 from typing import List, Dict, Optional, Tuple
+
+from .diagnostics import take_structure_snapshot, compare_snapshots, log_lost_elements
 from datetime import datetime
 
 from .xml_utils import XmlStructure, TransUnitParser
@@ -58,6 +60,9 @@ class StructuralMerger:
         # Получаем оригинальный контент первой части без метаданных разделения
         original_structure = self._get_original_structure()
 
+        # Take snapshot of original for diagnostics
+        original_snapshot = take_structure_snapshot(original_structure)
+
         # Извлекаем ВСЕ SDL элементы из оригинала
         sdl_elements = self._extract_all_sdl_elements(original_structure)
 
@@ -75,6 +80,11 @@ class StructuralMerger:
         is_valid, error_msg = self.validator.validate_merged_file(merged_content)
         if not is_valid:
             logger.warning(f"Merged file validation warning: {error_msg}")
+
+        merged_snapshot = take_structure_snapshot(merged_content)
+        lost = compare_snapshots(original_snapshot, merged_snapshot)
+        if any(lost.values()):
+            log_lost_elements(lost, original_structure)
 
         logger.info("Merge completed with ABSOLUTE SDL preservation")
         return merged_content
