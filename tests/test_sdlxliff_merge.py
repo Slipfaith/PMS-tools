@@ -1,5 +1,9 @@
 import re
-from sdlxliff_split_merge import StructuralSplitter, merge_with_original
+from sdlxliff_split_merge import (
+    StructuralSplitter,
+    merge_with_original,
+    load_original_and_parts,
+)
 
 SAMPLE_ORIG = """
 <xliff xmlns='urn:oasis:names:tc:xliff:document:1.2'><file><header></header><body>
@@ -36,3 +40,23 @@ def test_merge_with_original():
     assert "<target>dos</target>" in merged
     assert "<target>tres</target>" in merged
     assert "<target>cuatro</target>" in merged
+
+
+def test_load_original_and_parts(tmp_path):
+    orig_path = tmp_path / "doc.sdlxliff"
+    orig_path.write_text(SAMPLE_ORIG, encoding="utf-8")
+
+    splitter = StructuralSplitter(SAMPLE_ORIG)
+    parts = splitter.split(2)
+    part_paths = []
+    for i, content in enumerate(parts, 1):
+        p = tmp_path / f"doc.{i}of2.sdlxliff"
+        p.write_text(content, encoding="utf-8")
+        part_paths.append(p)
+
+    all_paths = [str(part_paths[1]), str(orig_path), str(part_paths[0])]
+    original, loaded_parts = load_original_and_parts(all_paths)
+
+    assert original == SAMPLE_ORIG
+    assert len(loaded_parts) == 2
+    assert "1" in loaded_parts[0]
