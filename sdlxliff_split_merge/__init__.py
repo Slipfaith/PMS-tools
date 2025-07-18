@@ -8,7 +8,7 @@ from .splitter import StructuralSplitter
 from .merger import StructuralMerger
 from .validator import SdlxliffValidator
 from .io_utils import make_split_filenames, save_bytes_list, read_bytes_list, sort_split_filenames
-from .target_merge import merge_with_original
+from .merger import merge_with_original
 from .xml_utils import TransUnitParser, XmlStructure
 
 # Импорты для обратной совместимости с main.py
