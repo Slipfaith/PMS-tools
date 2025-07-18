@@ -50,6 +50,7 @@ class StructuralSplitter:
         return parts
 
     def split_by_word_count(self, words_per_part: int) -> List[str]:
+        """Backward compatible helper using words_per_part."""
         if words_per_part < 10:
             raise ValueError("Количество слов на часть должно быть не менее 10")
 
@@ -60,7 +61,27 @@ class StructuralSplitter:
         parts_count = max(1, (total_words + words_per_part - 1) // words_per_part)
         logger.info(f"Calculated {parts_count} parts for {words_per_part} words per part")
 
-        return self.split(parts_count)
+        return self.split_by_words(parts_count)
+
+    def split_by_words(self, parts_count: int) -> List[str]:
+        """Split into ``parts_count`` parts balancing source word count."""
+        if parts_count < 2:
+            raise ValueError("Количество частей должно быть не менее 2")
+
+        if parts_count > self.structure.get_segments_count():
+            raise ValueError(
+                f"Количество частей ({parts_count}) больше количества сегментов ({self.structure.get_segments_count()})"
+            )
+
+        distribution = self._distribute_segments_by_words(parts_count)
+        parts = []
+
+        for i, (start_idx, end_idx) in enumerate(distribution):
+            part_content = self._create_part_preserving_structure(i + 1, parts_count, start_idx, end_idx)
+            parts.append(part_content)
+
+        logger.info(f"Split into {parts_count} parts by words successfully")
+        return parts
 
     def _distribute_segments(self, parts_count: int) -> List[Tuple[int, int]]:
         total_segments = self.structure.get_segments_count()
@@ -80,6 +101,33 @@ class StructuralSplitter:
         if distribution and distribution[-1][1] < total_segments:
             distribution[-1] = (distribution[-1][0], total_segments)
 
+        return distribution
+
+    def _distribute_segments_by_words(self, parts_count: int) -> List[Tuple[int, int]]:
+        total_segments = self.structure.get_segments_count()
+        total_words = self.structure.get_word_count()
+        words_per_part = total_words / parts_count
+
+        distribution = []
+        current_idx = 0
+        accumulated_words = 0
+
+        for i in range(parts_count - 1):
+            target_words = words_per_part * (i + 1)
+            end_idx = current_idx
+            while end_idx < total_segments and accumulated_words < target_words:
+                unit_words = len(self.structure.trans_units[end_idx].source_text.split())
+                accumulated_words += unit_words
+                end_idx += 1
+
+            end_idx = self._adjust_for_groups(current_idx, end_idx, total_segments)
+            accumulated_words = sum(
+                len(self.structure.trans_units[j].source_text.split()) for j in range(end_idx)
+            )
+            distribution.append((current_idx, end_idx))
+            current_idx = end_idx
+
+        distribution.append((current_idx, total_segments))
         return distribution
 
     def _adjust_for_groups(self, start_idx: int, end_idx: int, total_segments: int) -> int:

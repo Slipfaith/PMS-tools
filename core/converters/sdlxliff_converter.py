@@ -145,11 +145,11 @@ class SdlxliffConverter(StreamingConverter):
 
             # Определяем метод разделения
             if settings.by_word_count:
-                progress_msg = "Разделение по " + str(settings.words_per_part) + " слов на часть..."
+                progress_msg = "Разделение на " + str(settings.parts_count) + " частей по словам..."
                 self._update_progress(30, progress_msg, options)
                 try:
-                    parts_content = splitter.split_by_word_count(settings.words_per_part)
-                    actual_parts = len(parts_content)
+                    parts_content = splitter.split_by_words(settings.parts_count)
+                    actual_parts = settings.parts_count
                 except Exception as e:
                     error_msg = f"Ошибка разделения по словам: {e}"
                     logger.error(error_msg)
@@ -258,7 +258,6 @@ class SdlxliffConverter(StreamingConverter):
                 "segments_total": split_info['total_segments'],
                 "words_total": split_info['total_words'],
                 "by_word_count": settings.by_word_count,
-                "words_per_part": settings.words_per_part if settings.by_word_count else None,
                 "preserve_groups": settings.preserve_groups,
                 "split_id": split_info['split_id'],
                 "encoding": split_info['encoding'],
