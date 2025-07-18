@@ -380,14 +380,24 @@ def merge_with_original(
 ) -> str:
     """Merge translations from ``parts_content`` into ``original_content``."""
     from .logger import get_file_logger
+    from .diagnostics import take_structure_snapshot, compare_snapshots, log_lost_elements
 
     log = get_file_logger(log_file)
+    log.info("Starting merge")
+
     structure = XmlStructure(original_content)
+    orig_snapshot = take_structure_snapshot(original_content)
     replacements = _extract_targets(parts_content, log)
+
+    orig_ids = {u.id for u in structure.trans_units}
+    unknown_ids = set(replacements) - orig_ids
+    for uid in unknown_ids:
+        log.warning(f"Translation id {uid} not present in original")
 
     result_parts = []
     last_pos = 0
     updated = 0
+    missing = []
 
     for unit in structure.trans_units:
         result_parts.append(original_content[last_pos : unit.start_pos])
@@ -400,10 +410,19 @@ def merge_with_original(
                 updated += 1
             result_parts.append(new_unit)
         else:
+            missing.append(unit.id)
             log.debug(f"Segment {unit.id} not found in parts")
             result_parts.append(unit.full_xml)
         last_pos = unit.end_pos
 
     result_parts.append(original_content[last_pos:])
-    log.info(f"Merge finished, {updated} segments updated")
-    return "".join(result_parts)
+    merged = "".join(result_parts)
+
+    new_snapshot = take_structure_snapshot(merged)
+    lost = compare_snapshots(orig_snapshot, new_snapshot)
+    log_lost_elements(lost, original_content)
+
+    log.info(
+        "Merge finished, %d segments updated, %d untouched", updated, len(missing)
+    )
+    return merged

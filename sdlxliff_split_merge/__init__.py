@@ -7,7 +7,13 @@ SDLXLIFF Split/Merge Module - Структурное разделение с п�
 from .splitter import StructuralSplitter
 from .merger import StructuralMerger
 from .validator import SdlxliffValidator
-from .io_utils import make_split_filenames, save_bytes_list, read_bytes_list, sort_split_filenames
+from .io_utils import (
+    make_split_filenames,
+    save_bytes_list,
+    read_bytes_list,
+    sort_split_filenames,
+    load_original_and_parts,
+)
 from .merger import merge_with_original
 from .xml_utils import TransUnitParser, XmlStructure
 
@@ -27,6 +33,7 @@ __all__ = [
     "save_bytes_list",
     "read_bytes_list",
     "sort_split_filenames",
+    "load_original_and_parts",
     "merge_with_original",
     # Старые имена для совместимости
     "Splitter",

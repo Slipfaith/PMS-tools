@@ -3,7 +3,7 @@
 from pathlib import Path
 import re
 import logging
-from typing import List
+from typing import List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,41 @@ def read_bytes_list(paths: List[str]) -> List[str]:
             raise
 
     return content_list
+
+
+def load_original_and_parts(paths: List[str]) -> Tuple[str, List[str]]:
+    """Read files and return original SDLXLIFF and translation parts.
+
+    Among ``paths`` there must be exactly one original file (without split
+    metadata) and one or more translated parts created by :class:`StructuralSplitter`.
+    The parts are returned sorted by part number.
+    """
+    from .validator import SdlxliffValidator
+
+    contents = read_bytes_list(paths)
+    validator = SdlxliffValidator()
+
+    original = None
+    part_pairs = []
+
+    for path, content in zip(paths, contents):
+        if validator.is_split_part(content):
+            part_pairs.append((path, content))
+            logger.debug("%s recognised as split part", path)
+        else:
+            if original is not None:
+                raise ValueError("Multiple original files supplied")
+            original = content
+            logger.debug("%s recognised as original", path)
+
+    if original is None:
+        raise ValueError("Original SDLXLIFF file not found among provided paths")
+
+    part_paths = [p for p, _ in part_pairs]
+    sorted_paths = sort_split_filenames(part_paths)
+    sorted_parts = [next(c for (pp, c) in part_pairs if pp == sp) for sp in sorted_paths]
+
+    return original, sorted_parts
 
 
 def read_file_with_encoding_detection(file_path: Path) -> str:
