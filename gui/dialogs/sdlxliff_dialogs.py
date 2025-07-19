@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 import logging
 
-from core.converters.sdlxliff_converter import SdlxliffSplitSettings, SdlxliffMergeSettings
+from sdlxliff_split_merge import SdlxliffSplitSettings, SdlxliffMergeSettings, SdlxliffAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class SdlxliffSplitDialog(QDialog):
 
     def setup_ui(self):
         self.setWindowTitle("Разделение SDLXLIFF файла")
-        self.resize(600, 500)
+        self.resize(400, 300)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
@@ -274,8 +274,8 @@ class SdlxliffSplitDialog(QDialog):
 
     def set_file(self, filepath: Path):
         try:
-            from core.converters.sdlxliff_converter import SdlxliffConverter
-            converter = SdlxliffConverter()
+            from sdlxliff_split_merge import SdlxliffAnalyzer
+            converter = SdlxliffAnalyzer()
 
             if not converter.can_handle(filepath):
                 QMessageBox.warning(self, "Ошибка", "Файл не является SDLXLIFF")

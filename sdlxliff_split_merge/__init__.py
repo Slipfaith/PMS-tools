@@ -13,9 +13,12 @@ from .io_utils import (
     read_bytes_list,
     sort_split_filenames,
     load_original_and_parts,
+    create_backup,  # Добавляем импорт create_backup
 )
 from .merger import merge_with_original
 from .xml_utils import TransUnitParser, XmlStructure
+from .settings import SdlxliffSplitSettings, SdlxliffMergeSettings  # Добавляем импорт настроек
+from .analyzer import SdlxliffAnalyzer  # Добавляем импорт анализатора
 
 # Импорты для обратной совместимости с main.py
 # Создаем алиасы для старых имен
@@ -35,6 +38,10 @@ __all__ = [
     "sort_split_filenames",
     "load_original_and_parts",
     "merge_with_original",
+    "create_backup",  # Добавляем в список экспортируемых
+    "SdlxliffSplitSettings",  # Добавляем настройки разделения
+    "SdlxliffMergeSettings",  # Добавляем настройки объединения
+    "SdlxliffAnalyzer",  # Добавляем анализатор
     # Старые имена для совместимости
     "Splitter",
     "Merger"

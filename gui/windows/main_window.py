@@ -647,6 +647,40 @@ class MainWindow(QMainWindow):
             from core.base import ConversionOptions
             options = ConversionOptions()
 
+            self.manager.start_sdlxliff_split(filepath, settings, options)
+
+            self.is_converting = True
+            self.start_btn.setEnabled(False)
+            self.stop_btn.setEnabled(True)
+            self.add_files_btn.setEnabled(False)
+            self.add_excel_btn.setEnabled(False)
+            self.split_sdlxliff_btn.setEnabled(False)
+            self.merge_sdlxliff_btn.setEnabled(False)
+
+            self.progress_widget.reset()
+            self.log_message(f"🚀 Начато разделение SDLXLIFF: {filepath.name}")
+
+            if settings.by_word_count:
+                self.log_message(f"   📝 Метод: по количеству слов ({settings.words_per_part} слов/часть)")
+            else:
+                self.log_message(f"   📋 Метод: на {settings.parts_count} равных частей")
+
+        except Exception as e:
+            error_msg = f"Ошибка запуска разделения SDLXLIFF: {e}"
+            self.log_message(f"💥 {error_msg}")
+            logger.exception(error_msg)
+
+            QMessageBox.critical(
+                self,
+                "Ошибка запуска",
+                f"Не удалось запустить разделение SDLXLIFF:\n\n{e}"
+            )
+
+    def start_sdlxliff_merge(self, filepaths: List[Path], settings):
+        try:
+            from core.base import ConversionOptions
+            options = ConversionOptions()
+
             self.manager.start_sdlxliff_merge(filepaths, settings, options)
 
             self.is_converting = True
@@ -994,37 +1028,3 @@ class MainWindow(QMainWindow):
         self.manager.shutdown()
         event.accept()
         logger.info("Main window closed")
-            options = ConversionOptions()
-
-            self.manager.start_sdlxliff_split(filepath, settings, options)
-
-            self.is_converting = True
-            self.start_btn.setEnabled(False)
-            self.stop_btn.setEnabled(True)
-            self.add_files_btn.setEnabled(False)
-            self.add_excel_btn.setEnabled(False)
-            self.split_sdlxliff_btn.setEnabled(False)
-            self.merge_sdlxliff_btn.setEnabled(False)
-
-            self.progress_widget.reset()
-            self.log_message(f"🚀 Начато разделение SDLXLIFF: {filepath.name}")
-
-            if settings.by_word_count:
-                self.log_message(f"   📝 Метод: по количеству слов ({settings.words_per_part} слов/часть)")
-            else:
-                self.log_message(f"   📋 Метод: на {settings.parts_count} равных частей")
-
-        except Exception as e:
-            error_msg = f"Ошибка запуска разделения SDLXLIFF: {e}"
-            self.log_message(f"💥 {error_msg}")
-            logger.exception(error_msg)
-
-            QMessageBox.critical(
-                self,
-                "Ошибка запуска",
-                f"Не удалось запустить разделение SDLXLIFF:\n\n{e}"
-            )
-
-    def start_sdlxliff_merge(self, filepaths: List[Path], settings):
-        try:
-            from core.base import ConversionOptions

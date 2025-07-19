@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import List
 import logging
 import time
+import re  # Добавляем импорт re
 
 from core.base import ConversionResult, ConversionStatus
 from sdlxliff_split_merge import (
@@ -12,8 +13,9 @@ from sdlxliff_split_merge import (
     make_split_filenames,
     save_bytes_list,
     load_original_and_parts,
-    create_backup
 )
+# Импортируем create_backup из io_utils напрямую
+from sdlxliff_split_merge.io_utils import create_backup
 
 logger = logging.getLogger(__name__)
 
