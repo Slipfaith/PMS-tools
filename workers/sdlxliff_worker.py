@@ -232,8 +232,15 @@ class SdlxliffMergeWorker(QThread):
 
             validator = SdlxliffValidator()
             metadata = validator._extract_split_metadata(parts_content[0])
-            original_name = metadata.get('original_name', 'merged.sdlxliff')
-            encoding = metadata.get('encoding', 'utf-8')
+            if metadata:
+                original_name = metadata.get('original_name', 'merged.sdlxliff')
+                encoding = metadata.get('encoding', 'utf-8')
+            else:
+                from sdlxliff_split_merge.xml_utils import XmlStructure
+
+                structure = XmlStructure(original_content)
+                original_name = 'merged.sdlxliff'
+                encoding = structure.encoding
 
             total_segments = len([1 for _ in re.finditer(r'<trans-unit[^>]*>', original_content)])
             translated_segments = len([1 for _ in re.finditer(r'<target[^>]*>.*?</target>', merged_content, re.DOTALL)])
@@ -270,7 +277,7 @@ class SdlxliffMergeWorker(QThread):
                 "translation_progress": (translated_segments / total_segments * 100) if total_segments > 0 else 0,
                 "output_size_mb": len(merged_content.encode(encoding)) / (1024 * 1024),
                 "original_file_used": True,
-                "split_id": metadata.get('split_id'),
+                "split_id": metadata.get('split_id') if metadata else None,
                 "original_name": original_name,
                 "encoding": encoding,
                 "log_file": log_file
