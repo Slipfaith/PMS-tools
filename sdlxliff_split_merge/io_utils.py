@@ -5,6 +5,8 @@ import re
 import logging
 from typing import List, Tuple
 
+_SPLIT_PART_RE = re.compile(r"\.\d+of\d+\.sdlxliff$", re.IGNORECASE)
+
 logger = logging.getLogger(__name__)
 
 
@@ -67,7 +69,10 @@ def load_original_and_parts(paths: List[str]) -> Tuple[str, List[str]]:
     part_pairs = []
 
     for path, content in zip(paths, contents):
-        if validator.is_split_part(content):
+        name = Path(path).name
+        is_part = validator.is_split_part(content) or _SPLIT_PART_RE.search(name)
+
+        if is_part:
             part_pairs.append((path, content))
             logger.debug("%s recognised as split part", path)
         else:
