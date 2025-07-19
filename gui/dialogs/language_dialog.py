@@ -2,8 +2,6 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLineEdit,
     QHBoxLayout, QPushButton
 )
-from PySide6.QtCore import Qt
-
 
 class LanguageDialog(QDialog):
     """Диалог ручной настройки языков"""

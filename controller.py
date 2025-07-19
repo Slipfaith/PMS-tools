@@ -1,7 +1,7 @@
-# controller.py - ПОЛНАЯ ВЕРСИЯ С ПОДДЕРЖКОЙ SDLXLIFF
+# controller.py
 
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import logging
 import re
 
@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 
 class MainController:
-    """Простой контроллер, который связывает GUI и бизнес-логику"""
 
     def __init__(self):
         from services.file_service import FileService
@@ -18,27 +17,21 @@ class MainController:
         self.file_service = FileService()
         self.converter = SdltmConverter()
 
-        # Состояние приложения
         self.files: List[Path] = []
         self.auto_detected_languages: Optional[Dict[str, str]] = None
         self.auto_language_source: Optional[Path] = None
         self.file_languages: Dict[Path, Dict[str, str]] = {}
 
     def add_files(self, filepaths: List[str]) -> List[Dict]:
-        """
-        Добавляет файлы и возвращает информацию для GUI
-        """
         files_info = []
         new_files = []
 
         for filepath_str in filepaths:
             filepath = Path(filepath_str)
 
-            # Проверяем, что файл существует и не добавлен уже
             if not filepath.exists() or filepath in self.files:
                 continue
 
-            # Получаем информацию о файле
             file_info = self.file_service.get_file_info(filepath)
             languages = None
             if filepath.suffix.lower() == '.sdltm':
@@ -46,7 +39,6 @@ class MainController:
                 if languages:
                     self.file_languages[filepath] = languages
 
-            # Добавляем только поддерживаемые файлы
             if file_info['is_supported']:
                 self.files.append(filepath)
                 new_files.append(filepath)
@@ -60,7 +52,6 @@ class MainController:
                     'languages': languages
                 })
 
-        # Автоопределение языков из первого SDLTM файла
         if new_files:
             self._auto_detect_languages_from_files(new_files)
 
@@ -68,7 +59,6 @@ class MainController:
         return files_info
 
     def remove_file(self, filepath: Path) -> bool:
-        """Удаляет файл из списка"""
         if filepath in self.files:
             self.files.remove(filepath)
             logger.info(f"Removed file: {filepath.name}")
@@ -76,7 +66,6 @@ class MainController:
         return False
 
     def clear_files(self):
-        """Очищает все файлы"""
         self.files.clear()
         self.auto_detected_languages = None
         self.auto_language_source = None
@@ -84,24 +73,17 @@ class MainController:
         logger.info("All files cleared")
 
     def get_file_count(self) -> int:
-        """Возвращает количество файлов"""
         return len(self.files)
 
     def detect_drop_files(self, filepaths: List[str]) -> tuple[str, List[str]]:
-        """Определяет формат перетаскиваемых файлов"""
         return self.file_service.detect_files_format(filepaths)
 
     def get_auto_detected_languages(self) -> Optional[Dict[str, str]]:
-        """Возвращает автоопределенные языки"""
         return self.auto_detected_languages
 
     def prepare_conversion_options(self, gui_options: Dict) -> 'ConversionOptions':
-        """
-        Создает опции конвертации из данных GUI
-        """
         from core.base import ConversionOptions
 
-        # Используем языки из GUI или автоопределенные
         src_lang = gui_options.get('source_lang', '').strip()
         tgt_lang = gui_options.get('target_lang', '').strip()
 
@@ -120,30 +102,22 @@ class MainController:
         )
 
     def get_files_for_conversion(self) -> List[Path]:
-        """Возвращает список файлов для конвертации"""
         return self.files.copy()
 
     def get_file_languages(self, filepath: Path) -> Optional[Dict[str, str]]:
-        """Возвращает языки для конкретного файла"""
         return self.file_languages.get(filepath)
 
     def set_file_languages(self, filepath: Path, source: str, target: str):
-        """Устанавливает языки для конкретного файла"""
         if filepath in self.files:
             self.file_languages[filepath] = {'source': source, 'target': target}
 
     def get_file_language_mapping(self) -> Dict[Path, Dict[str, str]]:
-        """Возвращает словарь языков для файлов"""
         return self.file_languages.copy()
 
     def validate_conversion_request(self, gui_options: Dict) -> tuple[bool, str]:
-        """
-        Валидирует запрос на конвертацию
-        """
         if not self.files:
             return False, "Нет файлов для конвертации"
 
-        # Проверяем, что выбран хотя бы один формат экспорта
         formats_selected = (
                 gui_options.get('export_tmx', False) or
                 gui_options.get('export_xlsx', False) or
@@ -155,30 +129,21 @@ class MainController:
 
         return True, "OK"
 
-    # ===========================================
-    # МЕТОДЫ ДЛЯ РАБОТЫ С EXCEL
-    # ===========================================
-
     def is_excel_file(self, filepath: Path) -> bool:
-        """Проверяет, является ли файл Excel"""
         return filepath.suffix.lower() in ['.xlsx', '.xls']
 
     def is_termbase_file(self, filepath: Path) -> bool:
-        """Проверяет, является ли файл терминологической базой"""
         return filepath.suffix.lower() in ['.xml', '.mtf', '.tbx']
 
     def analyze_excel_file(self, filepath: Path):
-        """Анализирует Excel файл для настройки конвертации"""
         try:
             from core.converters.excel_converter import ExcelConverter
 
             converter = ExcelConverter()
 
-            # Сначала валидируем файл
             if not converter.validate(filepath):
                 raise ValueError("Excel file validation failed")
 
-            # Анализируем структуру
             analysis = converter.analyze_excel_structure(filepath)
 
             logger.info(f"Excel analysis completed: {filepath.name}, {len(analysis.sheets)} sheets")
@@ -189,12 +154,9 @@ class MainController:
             raise
 
     def show_excel_config_dialog(self, filepath: Path, parent_widget):
-        """Показывает диалог настройки Excel конвертации"""
         try:
-            # Анализируем Excel файл
             analysis = self.analyze_excel_file(filepath)
 
-            # Показываем диалог настройки
             from gui.dialogs.excel_config_dialog import ExcelConfigDialog
             from PySide6.QtWidgets import QDialog
 
@@ -210,7 +172,6 @@ class MainController:
 
         except Exception as e:
             logger.error(f"Error in Excel config dialog for {filepath}: {e}")
-            # Показываем ошибку пользователю
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(
                 parent_widget,
@@ -221,7 +182,6 @@ class MainController:
             return None
 
     def show_termbase_config_dialog(self, filepath: Path, parent_widget):
-        """Диалог настройки конвертации терминологической базы"""
         try:
             from utils.term_base import extract_tb_info
             info = extract_tb_info(filepath)
@@ -245,7 +205,6 @@ class MainController:
             return None
 
     def convert_excel_file(self, filepath: Path, settings, options):
-        """Конвертирует Excel файл с заданными настройками"""
         try:
             from core.converters.excel_converter import ExcelConverter
 
@@ -261,7 +220,6 @@ class MainController:
             raise
 
     def convert_termbase_file(self, filepath: Path, options):
-        """Конвертирует терминологическую базу"""
         try:
             from core.converters.termbase_converter import TermBaseConverter
 
@@ -273,11 +231,10 @@ class MainController:
             raise
 
     def prepare_excel_conversion_options(self, settings) -> 'ConversionOptions':
-        """Создает опции конвертации для Excel"""
         from core.base import ConversionOptions
 
         return ConversionOptions(
-            export_tmx=True,  # Excel всегда конвертируется в TMX
+            export_tmx=True,
             export_xlsx=False,
             export_json=False,
             source_lang=settings.source_language,
@@ -286,7 +243,6 @@ class MainController:
         )
 
     def prepare_termbase_conversion_options(self, settings) -> 'ConversionOptions':
-        """Создает опции конвертации для терминологической базы"""
         from core.base import ConversionOptions
 
         return ConversionOptions(
@@ -299,7 +255,6 @@ class MainController:
         )
 
     def validate_excel_conversion_settings(self, settings) -> tuple[bool, str]:
-        """Валидирует настройки Excel конвертации"""
         try:
             if not settings:
                 return False, "Настройки конвертации не указаны"
@@ -316,12 +271,10 @@ class MainController:
             if not settings.column_mappings:
                 return False, "Не настроены колонки для конвертации"
 
-            # Проверяем, что для каждого выбранного листа есть маппинг
             for sheet_name in settings.selected_sheets:
                 if sheet_name not in settings.column_mappings:
                     return False, f"Не настроены колонки для листа '{sheet_name}'"
 
-                # Проверяем наличие текстовых колонок
                 from core.base import ColumnType
                 text_columns = [
                     col for col in settings.column_mappings[sheet_name].values()
@@ -338,7 +291,6 @@ class MainController:
             return False, f"Ошибка валидации: {e}"
 
     def validate_termbase_conversion_settings(self, settings) -> tuple[bool, str]:
-        """Проверяет настройки конвертации терминологической базы"""
         try:
             if not settings:
                 return False, "Настройки не указаны"
@@ -355,7 +307,6 @@ class MainController:
             return False, f"Ошибка валидации: {e}"
 
     def get_excel_file_info(self, filepath: Path) -> Dict:
-        """Получает информацию об Excel файле для GUI"""
         try:
             analysis = self.analyze_excel_file(filepath)
 
@@ -387,22 +338,14 @@ class MainController:
                 'is_excel': True
             }
 
-    # ===========================================
-    # МЕТОДЫ ДЛЯ РАБОТЫ С SDLXLIFF
-    # ===========================================
-
     def is_sdlxliff_file(self, filepath: Path) -> bool:
-        """Проверяет, является ли файл SDLXLIFF"""
         return filepath.suffix.lower() == '.sdlxliff'
 
     def is_sdlxliff_part_file(self, filepath: Path) -> bool:
-        """Проверяет, является ли файл частью разделенного SDLXLIFF"""
         pattern = r'\.\d+of\d+\.sdlxliff$'
         return bool(re.search(pattern, str(filepath), re.IGNORECASE))
 
     def find_sdlxliff_parts(self, filepath: Path) -> List[Path]:
-        """Находит все части разделенного SDLXLIFF файла"""
-        # Извлекаем базовое имя и информацию о частях
         match = re.search(r'(.+)\.(\d+)of(\d+)\.sdlxliff$', str(filepath), re.IGNORECASE)
         if not match:
             return []
@@ -410,7 +353,6 @@ class MainController:
         base_name = match.group(1)
         total_parts = int(match.group(3))
 
-        # Ищем все части
         parts = []
         for i in range(1, total_parts + 1):
             part_path = Path(f"{base_name}.{i}of{total_parts}.sdlxliff")
@@ -421,7 +363,6 @@ class MainController:
         return parts
 
     def analyze_sdlxliff_file(self, filepath: Path):
-        """Анализирует SDLXLIFF файл"""
         try:
             from core.converters.sdlxliff_converter import SdlxliffConverter
 
@@ -436,74 +377,28 @@ class MainController:
             raise
 
     def show_sdlxliff_split_dialog(self, filepath: Path, parent_widget):
-        """Показывает диалог разделения SDLXLIFF"""
-        try:
-            # Анализируем файл
-            analysis = self.analyze_sdlxliff_file(filepath)
+        from gui.dialogs.sdlxliff_dialogs import SdlxliffSplitDialog
+        from PySide6.QtWidgets import QDialog
 
-            if not analysis.get('valid', False):
-                from PySide6.QtWidgets import QMessageBox
-                QMessageBox.critical(
-                    parent_widget,
-                    "Ошибка файла",
-                    f"SDLXLIFF файл недействителен или поврежден:\n{analysis.get('error', 'Неизвестная ошибка')}"
-                )
-                return None
+        dialog = SdlxliffSplitDialog(parent_widget)
 
-            # Показываем диалог
-            from gui.dialogs.sdlxliff_dialogs import SdlxliffSplitDialog
-            from PySide6.QtWidgets import QDialog
+        if dialog.exec() == QDialog.Accepted:
+            return dialog.get_settings()
 
-            dialog = SdlxliffSplitDialog(filepath, analysis, parent_widget)
-
-            if dialog.exec() == QDialog.Accepted:
-                settings = dialog.get_settings()
-                logger.info(f"SDLXLIFF split settings accepted for {filepath.name}")
-                return settings
-            else:
-                logger.info(f"SDLXLIFF split cancelled for {filepath.name}")
-                return None
-
-        except Exception as e:
-            logger.error(f"Error in SDLXLIFF split dialog for {filepath}: {e}")
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.critical(
-                parent_widget,
-                "Ошибка анализа SDLXLIFF",
-                f"Не удалось проанализировать SDLXLIFF файл:\n\n{e}\n\n"
-                f"Убедитесь, что файл не поврежден."
-            )
-            return None
+        return None
 
     def show_sdlxliff_merge_dialog(self, filepaths: List[Path], parent_widget):
-        """Показывает диалог объединения SDLXLIFF"""
-        try:
-            from gui.dialogs.sdlxliff_dialogs import SdlxliffMergeDialog
-            from PySide6.QtWidgets import QDialog
+        from gui.dialogs.sdlxliff_dialogs import SdlxliffMergeDialog
+        from PySide6.QtWidgets import QDialog
 
-            dialog = SdlxliffMergeDialog(filepaths, parent_widget)
+        dialog = SdlxliffMergeDialog(parent_widget)
 
-            if dialog.exec() == QDialog.Accepted:
-                settings = dialog.get_settings()
-                ordered_files = dialog.get_ordered_files()
-                logger.info(f"SDLXLIFF merge settings accepted for {len(ordered_files)} files")
-                return settings, ordered_files
-            else:
-                logger.info("SDLXLIFF merge cancelled")
-                return None, None
+        if dialog.exec() == QDialog.Accepted:
+            return dialog.get_settings(), dialog.get_ordered_files()
 
-        except Exception as e:
-            logger.error(f"Error in SDLXLIFF merge dialog: {e}")
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.critical(
-                parent_widget,
-                "Ошибка",
-                f"Не удалось открыть диалог объединения:\n\n{e}"
-            )
-            return None, None
+        return None, None
 
     def validate_sdlxliff_split_settings(self, settings) -> tuple[bool, str]:
-        """Валидирует настройки разделения SDLXLIFF"""
         try:
             if not settings:
                 return False, "Настройки не указаны"
@@ -519,7 +414,6 @@ class MainController:
             return False, f"Ошибка валидации: {e}"
 
     def validate_sdlxliff_merge_settings(self, settings, filepaths: List[Path]) -> tuple[bool, str]:
-        """Валидирует настройки объединения SDLXLIFF"""
         try:
             if not settings:
                 return False, "Настройки не указаны"
@@ -531,7 +425,6 @@ class MainController:
             if len(filepaths) < 2:
                 return False, "Для объединения нужно минимум 2 файла"
 
-            # Проверяем существование всех файлов
             for filepath in filepaths:
                 if not filepath.exists():
                     return False, f"Файл не найден: {filepath.name}"
@@ -543,11 +436,9 @@ class MainController:
             return False, f"Ошибка валидации: {e}"
 
     def get_sdlxliff_file_info(self, filepath: Path) -> Dict:
-        """Получает информацию о SDLXLIFF файле для GUI"""
         try:
             analysis = self.analyze_sdlxliff_file(filepath)
 
-            # Проверяем, является ли файл частью
             is_part = self.is_sdlxliff_part_file(filepath)
 
             if is_part:
@@ -588,16 +479,10 @@ class MainController:
                 'is_sdlxliff': True
             }
 
-    # ===========================================
-    # ПРИВАТНЫЕ МЕТОДЫ
-    # ===========================================
-
     def _auto_detect_languages_from_files(self, new_files: List[Path]):
-        """Автоопределение языков из новых файлов"""
         if self.auto_detected_languages:
-            return  # Уже определены
+            return
 
-        # Ищем первый SDLTM файл
         for filepath in new_files:
             if filepath.suffix.lower() == '.sdltm':
                 languages = self.file_service.auto_detect_languages(filepath)
@@ -607,7 +492,6 @@ class MainController:
                     logger.info(f"Auto-detected languages from {filepath.name}: {languages}")
                     break
             elif self.is_excel_file(filepath):
-                # Для Excel файлов тоже можем попробовать определить языки
                 try:
                     analysis = self.analyze_excel_file(filepath)
                     if analysis.detected_source_lang and analysis.detected_target_lang:
@@ -619,4 +503,4 @@ class MainController:
                         logger.info(f"Auto-detected languages from Excel: {self.auto_detected_languages}")
                         break
                 except Exception:
-                    continue  # Игнорируем ошибки автоопределения для Excel
+                    continue

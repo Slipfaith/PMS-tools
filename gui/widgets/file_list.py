@@ -5,7 +5,6 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QProgressBar, QFrame, QSizePolicy
 )
 from PySide6.QtCore import Signal, Qt, QSize
-from PySide6.QtGui import QFont, QIcon
 from pathlib import Path
 from typing import List, Dict
 import logging

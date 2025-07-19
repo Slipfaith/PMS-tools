@@ -4,15 +4,15 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QProgressBar,
     QLabel, QGroupBox, QSizePolicy
 )
-from PySide6.QtCore import Signal, Qt, QTimer, QPropertyAnimation, QEasingCurve, QMutex, QMutexLocker
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QMutex, QMutexLocker
+
 from gui.ui_constants import (
     PROGRESS_BAR_STYLE,
     STATUS_LABEL_STYLE,
     PERCENT_LABEL_STYLE,
     FILES_LABEL_STYLE,
 )
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
