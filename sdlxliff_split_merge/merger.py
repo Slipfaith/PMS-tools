@@ -347,47 +347,23 @@ class StructuralMerger:
         return analysis
 
 
-def _extract_targets(parts: List[str], log) -> Dict[str, str]:
+def _extract_trans_units(parts: List[str], log) -> Dict[str, str]:
     mapping: Dict[str, str] = {}
     tu_pattern = re.compile(
-        r'<trans-unit\s+[^>]*id=["\']([^"\']+)["\'][^>]*>(.*?)</trans-unit>',
+        r'<trans-unit\s+[^>]*id=["\']([^"\']+)["\'][^>]*>.*?</trans-unit>',
         re.DOTALL,
     )
-    tgt_pattern = re.compile(r'<target[^>]*>.*?</target>', re.DOTALL)
 
     for idx, content in enumerate(parts, 1):
         for match in tu_pattern.finditer(content):
             unit_id = match.group(1)
-            unit_content = match.group(2)
-            target_m = tgt_pattern.search(unit_content)
-            if not target_m:
-                log.debug(f"Part {idx}: segment {unit_id} has no target")
-                continue
+            unit_xml = match.group(0)
             if unit_id in mapping:
-                log.warning(f"Duplicate translation for id {unit_id} in part {idx}")
-            mapping[unit_id] = target_m.group(0)
+                log.warning(f"Duplicate segment {unit_id} in part {idx}")
+            mapping[unit_id] = unit_xml
 
-    log.info(f"Collected targets for {len(mapping)} segments")
+    log.info(f"Collected {len(mapping)} translated segments")
     return mapping
-
-
-def _replace_target(xml: str, new_target: str) -> str:
-    if re.search(r'<target[^>]*>.*?</target>', xml, re.DOTALL):
-        return re.sub(
-            r'<target[^>]*>.*?</target>', new_target, xml, count=1, flags=re.DOTALL
-        )
-
-    source_close = xml.find('</source>')
-    if source_close != -1:
-        indent_match = re.search(r'\n(\s*)<source', xml)
-        indent = indent_match.group(1) if indent_match else '    '
-        insert_pos = xml.find('>', source_close) + 1
-        return xml[:insert_pos] + f'\n{indent}{new_target}' + xml[insert_pos:]
-
-    return re.sub(
-        r'(</trans-unit>)', f'{new_target}\n\\1', xml, count=1, flags=re.DOTALL
-    )
-
 
 def merge_with_original(
         original_content: str, parts_content: List[str], log_file: str = "merge_details.log"
@@ -400,7 +376,7 @@ def merge_with_original(
 
     structure = XmlStructure(original_content)
     orig_snapshot = take_structure_snapshot(original_content)
-    replacements = _extract_targets(parts_content, log)
+    replacements = _extract_trans_units(parts_content, log)
 
     orig_ids = {u.id for u in structure.trans_units}
     unknown_ids = set(replacements) - orig_ids
@@ -415,11 +391,9 @@ def merge_with_original(
     for unit in structure.trans_units:
         result_parts.append(original_content[last_pos: unit.start_pos])
         if unit.id in replacements:
-            new_unit = _replace_target(unit.full_xml, replacements[unit.id])
-            if new_unit == unit.full_xml:
-                log.error(f"Failed to insert translation for id {unit.id}")
-            else:
-                log.debug(f"Segment {unit.id} updated")
+            new_unit = replacements[unit.id]
+            if new_unit != unit.full_xml:
+                log.debug(f"Segment {unit.id} replaced")
                 updated += 1
             result_parts.append(new_unit)
         else:
