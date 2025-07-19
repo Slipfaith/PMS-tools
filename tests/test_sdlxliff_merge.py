@@ -126,7 +126,6 @@ def test_structural_merger_without_metadata():
 
     assert "one two three" in merged
 
-
 def test_merge_preserves_statuses():
     original = (
         "<xliff><file><body>"
