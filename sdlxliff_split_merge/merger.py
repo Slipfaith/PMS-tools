@@ -376,13 +376,29 @@ def _replace_target(xml: str, new_target: str) -> str:
 
 
 def merge_with_original(
-    original_content: str, parts_content: List[str], log_file: str = "merge_details.log"
+    original_content: str,
+    parts_content: List[str],
+    log_file: str = "merge_details.log",
+    *,
+    structured_log: bool = False,
 ) -> str:
-    """Merge translations from ``parts_content`` into ``original_content``."""
-    from .logger import get_file_logger
+    """Merge translations from ``parts_content`` into ``original_content``.
+
+    Parameters
+    ----------
+    original_content:
+        SDLXLIFF content serving as the merge reference.
+    parts_content:
+        List of translated parts created by :class:`StructuralSplitter`.
+    log_file:
+        Destination file for merge logs.
+    structured_log:
+        If ``True`` use JSON formatting for the log file.
+    """
+    from .logger import get_file_logger, get_json_logger
     from .diagnostics import take_structure_snapshot, compare_snapshots, log_lost_elements
 
-    log = get_file_logger(log_file)
+    log = get_json_logger(log_file) if structured_log else get_file_logger(log_file)
     log.info("Starting merge")
 
     structure = XmlStructure(original_content)
