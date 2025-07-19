@@ -60,3 +60,26 @@ def test_load_original_and_parts(tmp_path):
     assert original == SAMPLE_ORIG
     assert len(loaded_parts) == 2
     assert "1" in loaded_parts[0]
+
+
+def test_load_parts_missing_metadata(tmp_path):
+    orig_path = tmp_path / "doc.sdlxliff"
+    orig_path.write_text(SAMPLE_ORIG, encoding="utf-8")
+
+    splitter = StructuralSplitter(SAMPLE_ORIG)
+    parts = splitter.split(2)
+    stripped = [
+        re.sub(r"<!-- SDLXLIFF_SPLIT_METADATA:.*?-->\s*", "", p, flags=re.DOTALL)
+        for p in parts
+    ]
+    part_paths = []
+    for i, content in enumerate(stripped, 1):
+        p = tmp_path / f"doc.{i}of2.sdlxliff"
+        p.write_text(content, encoding="utf-8")
+        part_paths.append(p)
+
+    all_paths = [str(orig_path), str(part_paths[0]), str(part_paths[1])]
+    original, loaded_parts = load_original_and_parts(all_paths)
+
+    assert original == SAMPLE_ORIG
+    assert len(loaded_parts) == 2
