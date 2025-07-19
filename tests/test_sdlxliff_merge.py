@@ -125,3 +125,22 @@ def test_structural_merger_without_metadata():
     merged = merger.merge()
 
     assert "one two three" in merged
+
+def test_merge_preserves_statuses():
+    original = (
+        "<xliff><file><body>"
+        "<trans-unit id='1' approved='no'><source>hello</source><target state='needs-translation'/></trans-unit>"
+        "</body></file></xliff>"
+    )
+
+    parts = [
+        "<xliff><file><body>",
+        "<trans-unit id='1' approved='yes'><source>hello</source><target state='translated'>hola</target></trans-unit>",
+        "</body></file></xliff>",
+    ]
+
+    merged = merge_with_original(original, parts)
+
+    assert "approved='yes'" in merged
+    assert "state='translated'" in merged
+    assert "hola" in merged
