@@ -50,8 +50,9 @@ class SdlxliffSplitDialog(QDialog):
         """)
         layout.addWidget(header)
 
-        drop_group = self.create_drop_area_group()
-        layout.addWidget(drop_group)
+        # Группа с drop area
+        self.drop_group = self.create_drop_area_group()
+        layout.addWidget(self.drop_group)
 
         self.info_group = self.create_file_info_group()
         layout.addWidget(self.info_group)
@@ -134,6 +135,11 @@ class SdlxliffSplitDialog(QDialog):
 
         self.segments_label = QLabel()
         layout.addRow("Сегментов:", self.segments_label)
+
+        # Добавляем строку с количеством слов
+        self.words_label = QLabel()
+        self.words_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        layout.addRow("Всего слов:", self.words_label)
 
         self.est_label = QLabel()
         self.est_label.setStyleSheet("color: #666; font-size: 11px;")
@@ -292,6 +298,9 @@ class SdlxliffSplitDialog(QDialog):
             self.filepath = filepath
             self.update_file_info()
 
+            # Скрываем drop area после успешной загрузки файла
+            self.drop_group.hide()
+
             self.info_group.show()
             self.split_group.show()
             self.output_group.show()
@@ -314,6 +323,10 @@ class SdlxliffSplitDialog(QDialog):
         segments = self.file_info.get('segments_count', 0)
         self.segments_label.setText(f"{segments:,}")
 
+        # Добавляем общее количество слов
+        total_words = self.file_info.get('words_count', 0)
+        self.words_label.setText(f"{total_words:,}")
+
         if self.file_info.get('valid', False):
             est_1000 = self.file_info.get('estimated_parts_1000_words', 0)
             est_2000 = self.file_info.get('estimated_parts_2000_words', 0)
@@ -333,13 +346,25 @@ class SdlxliffSplitDialog(QDialog):
             return
 
         segments = self.file_info.get('segments_count', 0)
+        words = self.file_info.get('words_count', 0)
 
         if self.equal_parts_radio.isChecked():
             parts = self.parts_spin.value()
             segments_per_part = segments // parts if parts > 0 else 0
-            self.result_info.setText(f"≈ {segments_per_part} сегментов на часть")
+            words_per_part = words // parts if parts > 0 else 0
+            self.result_info.setText(
+                f"≈ {segments_per_part} сегментов и {words_per_part:,} слов на часть"
+            )
         else:
-            self.result_info.setText("Количество частей будет определено автоматически")
+            # Для разделения по словам рассчитываем количество частей
+            words_per_part = self.words_spin.value()
+            if words > 0 and words_per_part > 0:
+                estimated_parts = max(2, (words + words_per_part - 1) // words_per_part)
+                self.result_info.setText(
+                    f"Будет создано примерно {estimated_parts} частей по {words_per_part:,} слов"
+                )
+            else:
+                self.result_info.setText("Количество частей будет определено автоматически")
 
     def browse_output_dir(self):
         dir_path = QFileDialog.getExistingDirectory(
@@ -597,7 +622,7 @@ class SdlxliffMergeDialog(QDialog):
         layout = QVBoxLayout(group)
 
         self.validate_cb = QCheckBox("Проверять совместимость частей перед объединением")
-        self.validate_cb.setChecked(True)
+        self.validate_cb.setChecked(False)
         self.validate_cb.setToolTip(
             "Проверяет, что все части имеют одинаковую структуру\n"
             "и могут быть безопасно объединены"

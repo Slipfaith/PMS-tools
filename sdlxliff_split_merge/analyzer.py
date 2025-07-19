@@ -42,6 +42,15 @@ class SdlxliffAnalyzer:
                     splitter = StructuralSplitter(content)
                     split_info = splitter.get_split_info()
 
+                    # Рассчитываем правильные оценки количества частей
+                    total_words = split_info['total_words']
+
+                    # Для расчета частей: делим общее количество слов на слова в части
+                    # и округляем вверх, минимум 2 части (для разделения нужно минимум 2)
+                    estimated_1000 = max(2, (total_words + 999) // 1000) if total_words > 0 else 2
+                    estimated_2000 = max(2, (total_words + 1999) // 2000) if total_words > 0 else 2
+                    estimated_5000 = max(2, (total_words + 4999) // 5000) if total_words > 0 else 2
+
                     return {
                         "valid": True,
                         "is_part": False,
@@ -51,9 +60,9 @@ class SdlxliffAnalyzer:
                         "file_size_mb": len(content.encode(split_info['encoding'])) / (1024 * 1024),
                         "encoding": split_info['encoding'],
                         "has_groups": split_info['has_groups'],
-                        "estimated_parts_1000_words": splitter.estimate_parts_by_words(1000),
-                        "estimated_parts_2000_words": splitter.estimate_parts_by_words(2000),
-                        "estimated_parts_5000_words": splitter.estimate_parts_by_words(5000),
+                        "estimated_parts_1000_words": estimated_1000,
+                        "estimated_parts_2000_words": estimated_2000,
+                        "estimated_parts_5000_words": estimated_5000,
                     }
                 except Exception as e:
                     logger.warning(f"Не удалось проанализировать структуру файла: {e}")
@@ -61,18 +70,27 @@ class SdlxliffAnalyzer:
                     file_size_mb = len(content.encode('utf-8')) / (1024 * 1024)
                     segments_count = len(re.findall(r'<trans-unit', content))
 
+                    # Простой расчет: предполагаем в среднем 10 слов на сегмент
+                    words_count = segments_count * 10
+
+                    # Для расчета частей: делим общее количество слов на слова в части
+                    # и округляем вверх, минимум 2 части
+                    estimated_1000 = max(2, (words_count + 999) // 1000) if words_count > 0 else 2
+                    estimated_2000 = max(2, (words_count + 1999) // 2000) if words_count > 0 else 2
+                    estimated_5000 = max(2, (words_count + 4999) // 5000) if words_count > 0 else 2
+
                     return {
                         "valid": True,
                         "is_part": False,
                         "segments_count": segments_count,
-                        "words_count": segments_count * 10,
+                        "words_count": words_count,
                         "translated_count": 0,
                         "file_size_mb": file_size_mb,
                         "encoding": "utf-8",
                         "has_groups": '<group' in content,
-                        "estimated_parts_1000_words": max(1, segments_count // 100),
-                        "estimated_parts_2000_words": max(1, segments_count // 200),
-                        "estimated_parts_5000_words": max(1, segments_count // 500),
+                        "estimated_parts_1000_words": estimated_1000,
+                        "estimated_parts_2000_words": estimated_2000,
+                        "estimated_parts_5000_words": estimated_5000,
                         "analysis_warning": "Использована упрощенная оценка из-за ошибки анализа"
                     }
 
