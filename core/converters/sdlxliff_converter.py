@@ -1,8 +1,3 @@
-# core/converters/sdlxliff_converter.py
-"""
-Обновленный конвертер для работы с SDLXLIFF файлами (разделение/объединение)
-ИСПРАВЛЕНО: Использует мягкую валидацию для работы с реальными файлами
-"""
 import re
 from pathlib import Path
 from typing import List, Dict, Optional, Iterator
@@ -29,9 +24,9 @@ class SdlxliffSplitSettings:
 
     def validate(self) -> tuple[bool, str]:
         """Валидация настроек"""
-        if self.parts_count < 2:
+        if not self.by_word_count and self.parts_count < 2:
             return False, "Количество частей должно быть не менее 2"
-        if self.parts_count > 100:
+        if not self.by_word_count and self.parts_count > 100:
             return False, "Количество частей не может превышать 100"
         if self.by_word_count and self.words_per_part < 10:
             return False, "Количество слов на часть должно быть не менее 10"
@@ -74,10 +69,8 @@ class SdlxliffConverter(StreamingConverter):
             raise ValidationError("Not a file: " + str(filepath))
 
         try:
-            # Читаем файл
             content = self._read_file_safely(filepath)
 
-            # Используем мягкий валидатор
             from sdlxliff_split_merge import SdlxliffValidator
 
             validator = SdlxliffValidator()
@@ -97,13 +90,11 @@ class SdlxliffConverter(StreamingConverter):
         try:
             self._update_progress(0, "Проверка файла...", options)
 
-            # Валидация файла для разделения
             content = self._read_file_safely(filepath)
 
             from sdlxliff_split_merge import SdlxliffValidator
             validator = SdlxliffValidator()
 
-            # Используем специальную валидацию для разделения
             is_valid, error_msg = validator.validate_for_splitting(content)
             if not is_valid:
                 return ConversionResult(
@@ -114,7 +105,6 @@ class SdlxliffConverter(StreamingConverter):
                     status=ConversionStatus.FAILED
                 )
 
-            # Валидация настроек
             is_valid, error_msg = settings.validate()
             if not is_valid:
                 return ConversionResult(
@@ -127,7 +117,6 @@ class SdlxliffConverter(StreamingConverter):
 
             self._update_progress(20, "Анализ структуры...", options)
 
-            # Создаем разделитель
             from sdlxliff_split_merge import StructuralSplitter
 
             try:
@@ -143,13 +132,13 @@ class SdlxliffConverter(StreamingConverter):
                     status=ConversionStatus.FAILED
                 )
 
-            # Определяем метод разделения
             if settings.by_word_count:
-                progress_msg = "Разделение на " + str(settings.parts_count) + " частей по словам..."
+                estimated_parts = splitter.estimate_parts_by_words(settings.words_per_part)
+                progress_msg = f"Разделение на ~{estimated_parts} частей по {settings.words_per_part} слов..."
                 self._update_progress(30, progress_msg, options)
                 try:
-                    parts_content = splitter.split_by_words(settings.parts_count)
-                    actual_parts = settings.parts_count
+                    parts_content = splitter.split_by_word_count(settings.words_per_part)
+                    actual_parts = len(parts_content)
                 except Exception as e:
                     error_msg = f"Ошибка разделения по словам: {e}"
                     logger.error(error_msg)
@@ -161,7 +150,7 @@ class SdlxliffConverter(StreamingConverter):
                         status=ConversionStatus.FAILED
                     )
             else:
-                progress_msg = "Разделение на " + str(settings.parts_count) + " частей..."
+                progress_msg = f"Разделение на {settings.parts_count} частей..."
                 self._update_progress(30, progress_msg, options)
                 try:
                     parts_content = splitter.split(settings.parts_count)
@@ -188,7 +177,6 @@ class SdlxliffConverter(StreamingConverter):
 
             self._update_progress(70, "Сохранение частей...", options)
 
-            # Создаем резервную копию если нужно
             if settings.create_backup:
                 try:
                     from sdlxliff_split_merge.io_utils import create_backup
@@ -196,21 +184,18 @@ class SdlxliffConverter(StreamingConverter):
                 except Exception as e:
                     logger.warning(f"Не удалось создать резервную копию: {e}")
 
-            # Определяем пути для сохранения
             output_dir = settings.output_dir or filepath.parent
 
             from sdlxliff_split_merge.io_utils import make_split_filenames, save_bytes_list
 
             output_paths = make_split_filenames(str(filepath), actual_parts)
 
-            # Если указана директория, корректируем пути
             if settings.output_dir:
                 output_paths = [
                     str(settings.output_dir / Path(p).name)
                     for p in output_paths
                 ]
 
-            # Сохраняем части
             try:
                 save_bytes_list(parts_content, output_paths)
             except Exception as e:
@@ -226,7 +211,6 @@ class SdlxliffConverter(StreamingConverter):
 
             self._update_progress(90, "Проверка результатов...", options)
 
-            # Проверяем созданные файлы
             output_files = []
             for path in output_paths:
                 p = Path(path)
@@ -246,10 +230,8 @@ class SdlxliffConverter(StreamingConverter):
 
             self._update_progress(100, "Разделение завершено!", options)
 
-            # Получаем информацию о разделении
             split_info = splitter.get_split_info()
 
-            # Статистика
             stats = {
                 "operation": "split",
                 "source_file": filepath.name,
@@ -258,6 +240,7 @@ class SdlxliffConverter(StreamingConverter):
                 "segments_total": split_info['total_segments'],
                 "words_total": split_info['total_words'],
                 "by_word_count": settings.by_word_count,
+                "words_per_part": settings.words_per_part if settings.by_word_count else None,
                 "preserve_groups": settings.preserve_groups,
                 "split_id": split_info['split_id'],
                 "encoding": split_info['encoding'],
@@ -287,7 +270,6 @@ class SdlxliffConverter(StreamingConverter):
         try:
             self._update_progress(0, "Проверка файлов...", options)
 
-            # Валидация настроек
             is_valid, error_msg = settings.validate()
             if not is_valid:
                 return ConversionResult(
@@ -298,7 +280,6 @@ class SdlxliffConverter(StreamingConverter):
                     status=ConversionStatus.FAILED
                 )
 
-            # Проверяем все файлы
             for filepath in filepaths:
                 if not filepath.exists():
                     error_msg = "File not found: " + str(filepath)
@@ -312,7 +293,6 @@ class SdlxliffConverter(StreamingConverter):
 
             self._update_progress(10, "Чтение файлов...", options)
 
-            # Читаем все части
             parts_content = []
             for filepath in filepaths:
                 try:
@@ -330,7 +310,6 @@ class SdlxliffConverter(StreamingConverter):
 
             self._update_progress(30, "Анализ структуры частей...", options)
 
-            # Валидируем части если нужно
             if settings.validate_parts:
                 from sdlxliff_split_merge import SdlxliffValidator
 
@@ -348,7 +327,6 @@ class SdlxliffConverter(StreamingConverter):
 
             self._update_progress(50, "Объединение частей...", options)
 
-            # Создаем объединитель
             from sdlxliff_split_merge import StructuralMerger
 
             try:
@@ -376,40 +354,33 @@ class SdlxliffConverter(StreamingConverter):
 
             self._update_progress(70, "Проверка результата...", options)
 
-            # Получаем информацию об объединении
             merge_info = merger.get_merge_info()
 
-            # Проверяем полноту переводов если нужно
             if settings.check_completeness:
                 try:
                     is_complete, missing_segments = merger.validate_translation_completeness()
                     if not is_complete:
-                        warning_msg = "Translation incomplete: " + str(len(missing_segments)) + " missing segments"
+                        warning_msg = f"Translation incomplete: {len(missing_segments)} missing segments"
                         logger.warning(warning_msg)
                 except Exception as e:
                     logger.warning(f"Не удалось проверить полноту переводов: {e}")
 
             self._update_progress(80, "Сохранение файла...", options)
 
-            # Определяем путь для сохранения
             if settings.output_path:
                 output_path = settings.output_path
             else:
-                # Определяем имя из метаданных
                 original_name = merge_info.get('original_name')
                 if original_name:
-                    # Убеждаемся, что расширение .sdlxliff
                     if not original_name.lower().endswith('.sdlxliff'):
                         original_name = Path(original_name).stem + '.sdlxliff'
                     output_path = filepaths[0].parent / original_name
                 else:
-                    # Убираем паттерн вида .1of3 и обеспечиваем расширение .sdlxliff
                     import re
                     base_name = filepaths[0].stem
                     base_name = re.sub(r'\.\d+of\d+', '', base_name)
                     output_path = filepaths[0].parent / (base_name + "_merged.sdlxliff")
 
-                    # Создаем резервную копию если файл существует
                     if settings.create_backup and output_path.exists():
                         try:
                             from sdlxliff_split_merge.io_utils import create_backup
@@ -417,10 +388,9 @@ class SdlxliffConverter(StreamingConverter):
                         except Exception as e:
                             logger.warning(f"Не удалось создать резервную копию: {e}")
 
-            # Сохраняем объединенный файл
             encoding = merge_info.get('encoding', 'utf-8')
             try:
-                with open(output_path, 'w', encoding=encoding) as f:
+                with open(output_path, 'w', encoding=encoding, newline='') as f:
                     f.write(merged_content)
             except Exception as e:
                 error_msg = f"Ошибка сохранения файла: {e}"
@@ -435,7 +405,6 @@ class SdlxliffConverter(StreamingConverter):
 
             self._update_progress(100, "Объединение завершено!", options)
 
-            # Статистика
             translation_stats = merger.get_translation_stats()
 
             stats = {
@@ -492,17 +461,14 @@ class SdlxliffConverter(StreamingConverter):
     def analyze_file(self, filepath: Path) -> Dict[str, any]:
         """ИСПРАВЛЕНО: Анализирует SDLXLIFF файл и возвращает информацию с обработкой ошибок"""
         try:
-            # Читаем файл
             content = self._read_file_safely(filepath)
 
-            # Проверяем, является ли файл частью
             from sdlxliff_split_merge import SdlxliffValidator
 
             validator = SdlxliffValidator()
             is_part = validator.is_split_part(content)
 
             if is_part:
-                # Извлекаем метаданные части
                 metadata = validator._extract_split_metadata(content)
                 return {
                     "valid": True,
@@ -511,7 +477,6 @@ class SdlxliffConverter(StreamingConverter):
                     "file_size_mb": len(content.encode('utf-8')) / (1024 * 1024)
                 }
             else:
-                # Анализируем обычный файл
                 try:
                     from sdlxliff_split_merge import StructuralSplitter
 
@@ -534,7 +499,6 @@ class SdlxliffConverter(StreamingConverter):
                 except Exception as e:
                     logger.warning(f"Не удалось проанализировать структуру файла: {e}")
 
-                    # Возвращаем базовую информацию
                     file_size_mb = len(content.encode('utf-8')) / (1024 * 1024)
                     segments_count = len(re.findall(r'<trans-unit', content))
 
@@ -542,7 +506,7 @@ class SdlxliffConverter(StreamingConverter):
                         "valid": True,
                         "is_part": False,
                         "segments_count": segments_count,
-                        "words_count": segments_count * 10,  # Примерная оценка
+                        "words_count": segments_count * 10,
                         "translated_count": 0,
                         "file_size_mb": file_size_mb,
                         "encoding": "utf-8",
@@ -564,10 +528,9 @@ class SdlxliffConverter(StreamingConverter):
     def _read_file_safely(self, filepath: Path) -> str:
         """ИСПРАВЛЕНО: Безопасно читает файл с улучшенным определением кодировки"""
         try:
-            # Пробуем UTF-8 с BOM
             with open(filepath, 'r', encoding='utf-8-sig') as f:
                 content = f.read()
-                if content.strip():  # Проверяем что файл не пустой
+                if content.strip():
                     return content
         except UnicodeDecodeError:
             pass
@@ -575,7 +538,6 @@ class SdlxliffConverter(StreamingConverter):
             logger.warning(f"Ошибка чтения с UTF-8-sig: {e}")
 
         try:
-            # Пробуем UTF-8
             with open(filepath, 'r', encoding='utf-8') as f:
                 content = f.read()
                 if content.strip():
@@ -586,7 +548,6 @@ class SdlxliffConverter(StreamingConverter):
             logger.warning(f"Ошибка чтения с UTF-8: {e}")
 
         try:
-            # Пробуем UTF-16
             with open(filepath, 'r', encoding='utf-16') as f:
                 content = f.read()
                 if content.strip():
@@ -597,11 +558,9 @@ class SdlxliffConverter(StreamingConverter):
             logger.warning(f"Ошибка чтения с UTF-16: {e}")
 
         try:
-            # Пробуем определить кодировку автоматически
             with open(filepath, 'rb') as f:
                 raw_data = f.read()
 
-            # Проверяем BOM
             if raw_data.startswith(b'\xff\xfe'):
                 encoding = 'utf-16le'
             elif raw_data.startswith(b'\xfe\xff'):
@@ -618,7 +577,6 @@ class SdlxliffConverter(StreamingConverter):
         except Exception as e:
             logger.warning(f"Ошибка автоопределения кодировки: {e}")
 
-        # Последняя попытка с игнорированием ошибок
         try:
             logger.warning(f"Используем UTF-8 с игнорированием ошибок для {filepath}")
             with open(filepath, 'r', encoding='utf-8', errors='replace') as f:

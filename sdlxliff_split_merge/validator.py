@@ -1,7 +1,6 @@
 import re
 import logging
 from typing import List, Tuple, Dict, Optional
-from lxml import etree
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +13,6 @@ class SdlxliffValidator:
                 return False, "Файл не содержит XLIFF структуру"
             if not self._has_required_elements(xml_content):
                 return False, "Отсутствуют обязательные элементы"
-            if not self._check_xml_structure(xml_content):
-                return False, "Ошибка структуры XML: файл повреждён или содержит непарные теги"
             if not self._has_trans_units(xml_content):
                 return False, "В файле нет сегментов <trans-unit>"
             if len(xml_content.strip()) < 100:
@@ -26,23 +23,15 @@ class SdlxliffValidator:
             return False, f"Ошибка валидации: {e}"
 
     def _has_xliff_structure(self, xml_content: str) -> bool:
-        xliff_pattern = r'<xliff[^>]*xmlns[^>]*xliff[^>]*>'
+        xliff_pattern = r'<xliff\s+'
         return bool(re.search(xliff_pattern, xml_content, re.IGNORECASE))
 
     def _has_required_elements(self, xml_content: str) -> bool:
-        required_elements = ['<file', '<header', '<body', '<trans-unit']
+        required_elements = ['<file', '<body', '<trans-unit']
         for element in required_elements:
             if element not in xml_content.lower():
                 return False
         return True
-
-    def _check_xml_structure(self, xml_content: str) -> bool:
-        try:
-            etree.fromstring(xml_content.encode("utf-8"))
-            return True
-        except Exception as e:
-            logger.error(f"Ошибка парсинга XML: {e}")
-            return False
 
     def _has_trans_units(self, xml_content: str) -> bool:
         return bool(re.search(r'<trans-unit[^>]*>', xml_content, re.IGNORECASE))

@@ -1,5 +1,3 @@
-# sdlxliff_split_merge/merger.py
-
 import re
 import logging
 from typing import List, Dict, Optional, Tuple
@@ -12,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 class StructuralMerger:
-
     def __init__(self, parts_content: List[str]):
         self.parts_content = parts_content
         self.validator = SdlxliffValidator()
@@ -269,15 +266,13 @@ class StructuralMerger:
         missing_segments = []
 
         for part_content, metadata in self.sorted_parts:
-            trans_unit_pattern = r'<trans-unit[^>]*id=["\']([^"\']+)["\'][^>]*>.*?</trans-unit>'
+            trans_unit_pattern = r'<trans-unit[^>]*id=["\']([^"\']+)["\'][^>]*>(.*?)</trans-unit>'
             trans_units = re.findall(trans_unit_pattern, part_content, re.DOTALL)
 
-            for match in trans_units:
+            for unit_id, unit_content in trans_units:
                 target_pattern = r'<target[^>]*>.*?</target>'
-                if not re.search(target_pattern, match, re.DOTALL):
-                    unit_id_match = re.search(r'id=["\']([^"\']+)["\']', match)
-                    if unit_id_match:
-                        missing_segments.append(unit_id_match.group(1))
+                if not re.search(target_pattern, unit_content, re.DOTALL):
+                    missing_segments.append(unit_id)
 
         return len(missing_segments) == 0, missing_segments
 
@@ -341,7 +336,6 @@ class StructuralMerger:
 
 
 def _extract_targets(parts: List[str], log) -> Dict[str, str]:
-    """Collect target segments from split parts."""
     mapping: Dict[str, str] = {}
     tu_pattern = re.compile(
         r'<trans-unit\s+[^>]*id=["\']([^"\']+)["\'][^>]*>(.*?)</trans-unit>',
@@ -352,9 +346,10 @@ def _extract_targets(parts: List[str], log) -> Dict[str, str]:
     for idx, content in enumerate(parts, 1):
         for match in tu_pattern.finditer(content):
             unit_id = match.group(1)
-            target_m = tgt_pattern.search(match.group(0))
+            unit_content = match.group(2)
+            target_m = tgt_pattern.search(unit_content)
             if not target_m:
-                log.warning(f"Part {idx}: segment {unit_id} has no target")
+                log.debug(f"Part {idx}: segment {unit_id} has no target")
                 continue
             if unit_id in mapping:
                 log.warning(f"Duplicate translation for id {unit_id} in part {idx}")
@@ -365,25 +360,31 @@ def _extract_targets(parts: List[str], log) -> Dict[str, str]:
 
 
 def _replace_target(xml: str, new_target: str) -> str:
-    """Replace or insert a <target> tag in ``xml`` with ``new_target``."""
     if re.search(r'<target[^>]*>.*?</target>', xml, re.DOTALL):
         return re.sub(
             r'<target[^>]*>.*?</target>', new_target, xml, count=1, flags=re.DOTALL
         )
+
+    source_close = xml.find('</source>')
+    if source_close != -1:
+        indent_match = re.search(r'\n(\s*)<source', xml)
+        indent = indent_match.group(1) if indent_match else '    '
+        insert_pos = xml.find('>', source_close) + 1
+        return xml[:insert_pos] + f'\n{indent}{new_target}' + xml[insert_pos:]
+
     return re.sub(
-        r'(</trans-unit>)', new_target + r'\1', xml, count=1, flags=re.DOTALL
+        r'(</trans-unit>)', f'{new_target}\n\\1', xml, count=1, flags=re.DOTALL
     )
 
 
 def merge_with_original(
-    original_content: str, parts_content: List[str], log_file: str = "merge_details.log"
+        original_content: str, parts_content: List[str], log_file: str = "merge_details.log"
 ) -> str:
-    """Merge translations from ``parts_content`` into ``original_content``."""
     from .logger import get_file_logger
     from .diagnostics import take_structure_snapshot, compare_snapshots, log_lost_elements
 
     log = get_file_logger(log_file)
-    log.info("Starting merge")
+    log.info("Starting merge with original")
 
     structure = XmlStructure(original_content)
     orig_snapshot = take_structure_snapshot(original_content)
@@ -400,13 +401,13 @@ def merge_with_original(
     missing = []
 
     for unit in structure.trans_units:
-        result_parts.append(original_content[last_pos : unit.start_pos])
+        result_parts.append(original_content[last_pos: unit.start_pos])
         if unit.id in replacements:
             new_unit = _replace_target(unit.full_xml, replacements[unit.id])
             if new_unit == unit.full_xml:
                 log.error(f"Failed to insert translation for id {unit.id}")
             else:
-                log.info(f"Segment {unit.id} updated")
+                log.debug(f"Segment {unit.id} updated")
                 updated += 1
             result_parts.append(new_unit)
         else:
@@ -420,7 +421,8 @@ def merge_with_original(
 
     new_snapshot = take_structure_snapshot(merged)
     lost = compare_snapshots(orig_snapshot, new_snapshot)
-    log_lost_elements(lost, original_content)
+    if any(lost.values()):
+        log_lost_elements(lost, original_content)
 
     log.info(
         "Merge finished, %d segments updated, %d untouched", updated, len(missing)

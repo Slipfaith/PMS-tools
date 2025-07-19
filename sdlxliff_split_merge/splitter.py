@@ -1,5 +1,3 @@
-# sdlxliff_split_merge/splitter.py
-
 import uuid
 import hashlib
 import re
@@ -15,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 
 class StructuralSplitter:
-
     def __init__(self, xml_content: str):
         self.xml_content = xml_content
         self.validator = SdlxliffValidator()
@@ -50,7 +47,6 @@ class StructuralSplitter:
         return parts
 
     def split_by_word_count(self, words_per_part: int) -> List[str]:
-        """Backward compatible helper using words_per_part."""
         if words_per_part < 10:
             raise ValueError("Количество слов на часть должно быть не менее 10")
 
@@ -58,13 +54,12 @@ class StructuralSplitter:
         if total_words == 0:
             raise ValueError("В файле нет слов для разделения")
 
-        parts_count = max(1, (total_words + words_per_part - 1) // words_per_part)
+        parts_count = max(2, (total_words + words_per_part - 1) // words_per_part)
         logger.info(f"Calculated {parts_count} parts for {words_per_part} words per part")
 
         return self.split_by_words(parts_count)
 
     def split_by_words(self, parts_count: int) -> List[str]:
-        """Split into ``parts_count`` parts balancing source word count."""
         if parts_count < 2:
             raise ValueError("Количество частей должно быть не менее 2")
 
@@ -106,28 +101,35 @@ class StructuralSplitter:
     def _distribute_segments_by_words(self, parts_count: int) -> List[Tuple[int, int]]:
         total_segments = self.structure.get_segments_count()
         total_words = self.structure.get_word_count()
+
+        if total_words == 0:
+            return self._distribute_segments(parts_count)
+
         words_per_part = total_words / parts_count
 
         distribution = []
         current_idx = 0
-        accumulated_words = 0
 
         for i in range(parts_count - 1):
             target_words = words_per_part * (i + 1)
+            accumulated_words = 0
             end_idx = current_idx
-            while end_idx < total_segments and accumulated_words < target_words:
-                unit_words = len(self.structure.trans_units[end_idx].source_text.split())
-                accumulated_words += unit_words
-                end_idx += 1
+
+            for j in range(current_idx, total_segments):
+                accumulated_words += len(self.structure.trans_units[j].source_text.split())
+                if accumulated_words >= target_words:
+                    end_idx = j + 1
+                    break
+            else:
+                end_idx = total_segments
 
             end_idx = self._adjust_for_groups(current_idx, end_idx, total_segments)
-            accumulated_words = sum(
-                len(self.structure.trans_units[j].source_text.split()) for j in range(end_idx)
-            )
             distribution.append((current_idx, end_idx))
             current_idx = end_idx
 
-        distribution.append((current_idx, total_segments))
+        if current_idx < total_segments:
+            distribution.append((current_idx, total_segments))
+
         return distribution
 
     def _adjust_for_groups(self, start_idx: int, end_idx: int, total_segments: int) -> int:
@@ -135,20 +137,19 @@ class StructuralSplitter:
             return total_segments
 
         if end_idx > 0 and end_idx < len(self.structure.trans_units):
-            boundary_unit = self.structure.trans_units[end_idx - 1]
+            for i in range(end_idx - 1, start_idx - 1, -1):
+                unit = self.structure.trans_units[i]
+                if unit.group_id is None:
+                    return i + 1
 
-            if boundary_unit.group_id is not None:
-                group_id = boundary_unit.group_id
-                group_segments = []
-
-                for i, unit in enumerate(self.structure.trans_units):
-                    if unit.group_id == group_id:
-                        group_segments.append(i)
-
-                if group_segments:
-                    last_group_segment = max(group_segments)
-                    if end_idx <= last_group_segment:
-                        return last_group_segment + 1
+                group_units = [j for j, u in enumerate(self.structure.trans_units)
+                               if u.group_id == unit.group_id]
+                if group_units:
+                    last_in_group = max(group_units)
+                    if last_in_group >= end_idx:
+                        return last_in_group + 1
+                    else:
+                        return end_idx
 
         return end_idx
 
@@ -174,7 +175,7 @@ class StructuralSplitter:
         if sdl_contexts:
             body_parts.append(sdl_contexts)
 
-        if start_idx < len(self.structure.trans_units):
+        if start_idx < len(self.structure.trans_units) and end_idx > start_idx:
             end_idx = min(end_idx, len(self.structure.trans_units))
 
             current_group_id = None
@@ -265,7 +266,7 @@ class StructuralSplitter:
 
         part_segments = end_idx - start_idx
         part_words = sum(len(self.structure.trans_units[i].source_text.split())
-                         for i in range(start_idx, end_idx))
+                         for i in range(start_idx, min(end_idx, len(self.structure.trans_units))))
 
         metadata = f"""<!-- SDLXLIFF_SPLIT_METADATA:
     split_id="{self.split_id}"
@@ -301,7 +302,7 @@ class StructuralSplitter:
         total_words = self.structure.get_word_count()
         if total_words == 0:
             return 1
-        return max(1, (total_words + words_per_part - 1) // words_per_part)
+        return max(2, (total_words + words_per_part - 1) // words_per_part)
 
     def get_segments_distribution(self, parts_count: int) -> List[Dict[str, any]]:
         distribution = self._distribute_segments(parts_count)
@@ -310,11 +311,11 @@ class StructuralSplitter:
         for i, (start_idx, end_idx) in enumerate(distribution):
             part_segments = end_idx - start_idx
             part_words = sum(len(self.structure.trans_units[j].source_text.split())
-                             for j in range(start_idx, end_idx))
+                             for j in range(start_idx, min(end_idx, len(self.structure.trans_units))))
 
             groups_in_part = set()
             for j in range(start_idx, end_idx):
-                if self.structure.trans_units[j].group_id:
+                if j < len(self.structure.trans_units) and self.structure.trans_units[j].group_id:
                     groups_in_part.add(self.structure.trans_units[j].group_id)
 
             result.append({
@@ -355,7 +356,7 @@ class StructuralSplitter:
                 issues.append(f"Потеря сегментов: оригинал {original_segments}, объединено {merged_segments}")
 
         except Exception as e:
-            warnings.append(f"Ошибка тестирования объединения: {e}")
+            warnings.append(f"Ошибка тестирования объединения: {str(e)}")
 
         return {
             'valid': len(issues) == 0,
