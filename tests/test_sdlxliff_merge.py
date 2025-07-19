@@ -1,6 +1,7 @@
 import re
 from sdlxliff_split_merge import (
     StructuralSplitter,
+    StructuralMerger,
     merge_with_original,
     load_original_and_parts,
 )
@@ -110,3 +111,17 @@ def test_merge_worker_without_metadata(tmp_path):
     assert output_path.exists()
     content = output_path.read_text(encoding="utf-8")
     assert "one two three" in content
+
+
+def test_structural_merger_without_metadata():
+    splitter = StructuralSplitter(SAMPLE_ORIG)
+    parts = splitter.split(2)
+    stripped = [
+        re.sub(r"<!-- SDLXLIFF_SPLIT_METADATA:.*?-->\s*", "", p, flags=re.DOTALL)
+        for p in parts
+    ]
+
+    merger = StructuralMerger(stripped)
+    merged = merger.merge()
+
+    assert "one two three" in merged

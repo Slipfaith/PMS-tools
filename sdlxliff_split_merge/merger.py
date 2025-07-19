@@ -16,11 +16,11 @@ class StructuralMerger:
 
         is_valid, error_msg = self.validator.validate_split_parts(parts_content)
         if not is_valid:
-            raise ValueError(f"Некорректные части для объединения: {error_msg}")
+            logger.info(f"Skipping metadata validation: {error_msg}")
 
         self.parts_metadata = []
         for content in parts_content:
-            metadata = self.validator._extract_split_metadata(content)
+            metadata = self.validator._extract_split_metadata(content) or {}
             self.parts_metadata.append(metadata)
 
         self.sorted_parts = self._sort_parts()
@@ -40,7 +40,15 @@ class StructuralMerger:
 
     def _sort_parts(self) -> List[Tuple[str, Dict[str, str]]]:
         parts_with_metadata = list(zip(self.parts_content, self.parts_metadata))
-        return sorted(parts_with_metadata, key=lambda x: int(x[1]['part_number']))
+
+        def get_part_number(item: Tuple[str, Dict[str, str]]) -> int:
+            md = item[1]
+            try:
+                return int(md.get('part_number', 0))
+            except Exception:
+                return 0
+
+        return sorted(parts_with_metadata, key=get_part_number)
 
     def _get_original_header_from_first_part(self) -> str:
         first_part_content = self.sorted_parts[0][0]
@@ -61,7 +69,7 @@ class StructuralMerger:
     def _collect_all_trans_units_in_order(self) -> List[str]:
         all_trans_units = []
 
-        for part_content, metadata in self.sorted_parts:
+        for idx, (part_content, metadata) in enumerate(self.sorted_parts, 1):
             clean_content = re.sub(
                 r'<!-- SDLXLIFF_SPLIT_METADATA:.*?-->\s*',
                 '',
@@ -73,7 +81,11 @@ class StructuralMerger:
             trans_units = re.findall(trans_unit_pattern, clean_content, re.DOTALL)
 
             all_trans_units.extend(trans_units)
-            logger.debug(f"Collected {len(trans_units)} trans-units from part {metadata['part_number']}")
+            logger.debug(
+                "Collected %d trans-units from part %s",
+                len(trans_units),
+                metadata.get('part_number', idx),
+            )
 
         logger.info(f"Total collected trans-units: {len(all_trans_units)}")
         return all_trans_units
@@ -213,7 +225,7 @@ class StructuralMerger:
         if not self.parts_metadata:
             return {}
 
-        first_metadata = self.parts_metadata[0]
+        first_metadata = self.parts_metadata[0] or {}
 
         total_segments = 0
         total_words = 0
@@ -242,13 +254,13 @@ class StructuralMerger:
             'parts_stats': []
         }
 
-        for metadata in self.parts_metadata:
+        for idx, metadata in enumerate(self.parts_metadata, 1):
             try:
                 part_segments = int(metadata.get('part_segments_count', 0))
                 part_words = int(metadata.get('part_words_count', 0))
 
                 part_stats = {
-                    'part_number': int(metadata['part_number']),
+                    'part_number': int(metadata.get('part_number', idx)),
                     'segments_count': part_segments,
                     'words_count': part_words
                 }
