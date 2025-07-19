@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QFormLayout
 )
 from PySide6.QtCore import Qt, Signal
+import re
 from gui.widgets.drop_area import SmartDropArea
 from pathlib import Path
 from typing import List, Optional
@@ -539,6 +540,13 @@ class SdlxliffMergeDialog(QDialog):
 
         layout.addWidget(self.files_list)
 
+        self.original_file_label = QLabel("")
+        self.original_file_label.setStyleSheet(
+            "color: #2e7d32; font-size: 11px; font-weight: bold;"
+        )
+        self.original_file_label.setVisible(False)
+        layout.addWidget(self.original_file_label)
+
         order_buttons = QHBoxLayout()
 
         move_up_btn = QPushButton("⬆️ Вверх")
@@ -673,10 +681,40 @@ class SdlxliffMergeDialog(QDialog):
 
     def update_files_list(self):
         self.files_list.clear()
+        original_name = None
         for i, filepath in enumerate(self.filepaths):
-            item = QListWidgetItem(f"{i + 1}. {filepath.name}")
+            display = f"{i + 1}. {filepath.name}"
+            if not self._is_split_part_filename(filepath.name) and original_name is None:
+                display += " (оригинал)"
+                original_name = filepath.name
+            item = QListWidgetItem(display)
             item.setData(Qt.UserRole, filepath)
             self.files_list.addItem(item)
+
+        if original_name:
+            self.original_file_label.setText(f"Оригинальный файл: {original_name}")
+            self.original_file_label.setVisible(True)
+        else:
+            self.original_file_label.setText("Оригинальный файл не найден")
+            self.original_file_label.setVisible(True)
+
+    def highlight_original_in_list(self):
+        original_name = None
+        for i in range(self.files_list.count()):
+            item = self.files_list.item(i)
+            filepath = item.data(Qt.UserRole)
+            display = f"{i + 1}. {filepath.name}"
+            if not self._is_split_part_filename(filepath.name) and original_name is None:
+                display += " (оригинал)"
+                original_name = filepath.name
+            item.setText(display)
+
+        if original_name:
+            self.original_file_label.setText(f"Оригинальный файл: {original_name}")
+            self.original_file_label.setVisible(True)
+        else:
+            self.original_file_label.setText("Оригинальный файл не найден")
+            self.original_file_label.setVisible(True)
 
     def on_files_reordered(self):
         self.filepaths.clear()
@@ -686,6 +724,7 @@ class SdlxliffMergeDialog(QDialog):
             self.filepaths.append(filepath)
             item.setText(f"{i + 1}. {filepath.name}")
 
+        self.highlight_original_in_list()
         self.files_reordered.emit(self.filepaths)
 
     def move_file_up(self):
@@ -774,3 +813,7 @@ class SdlxliffMergeDialog(QDialog):
 
     def get_ordered_files(self) -> List[Path]:
         return self.filepaths.copy()
+
+    @staticmethod
+    def _is_split_part_filename(name: str) -> bool:
+        return bool(re.search(r"\.\d+of\d+\.sdlxliff$", name, re.IGNORECASE))
