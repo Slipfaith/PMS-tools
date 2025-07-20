@@ -731,8 +731,13 @@ class SdlxliffMergeDialog(QDialog):
                 part = match.group(1)
                 total = match.group(2)
                 display = f"{i + 1}. \U0001F4CB {filepath.name} [\u0427\u0430\u0441\u0442\u044C {part}/{total}] - {size_mb:.1f} MB"
+                style = "color: #333;"
             else:
-                display = f"{i + 1}. \U0001F4C4 {filepath.name} [\u041E\u0440\u0438\u0433\u0438\u043D\u0430\u043B] - {size_mb:.1f} MB"
+                display = f"{i + 1}. \u2705 \U0001F4C4 {filepath.name} [\u041E\u0440\u0438\u0433\u0438\u043D\u0430\u043B] - {size_mb:.1f} MB"
+                style = (
+                    "color: #2e7d32; font-weight: bold; background: #e8f5e8;"
+                    " border: 1px solid #2e7d32; border-radius: 4px; padding: 2px;"
+                )
                 if original_name is None:
                     original_name = filepath.name
 
@@ -741,6 +746,7 @@ class SdlxliffMergeDialog(QDialog):
             item.setToolTip(f"{filepath.name}\n\u0420\u0430\u0437\u043C\u0435\u0440: {size_mb:.1f} MB")
             widget = QLabel(display)
             widget.setMargin(2)
+            widget.setStyleSheet(style)
             item.setSizeHint(widget.sizeHint())
             self.files_list.addItem(item)
             self.files_list.setItemWidget(item, widget)
@@ -762,13 +768,19 @@ class SdlxliffMergeDialog(QDialog):
                 part = match.group(1)
                 total = match.group(2)
                 text = f"{i + 1}. \U0001F4CB {filepath.name} [\u0427\u0430\u0441\u0442\u044C {part}/{total}] - {size_mb:.1f} MB"
+                style = "color: #333;"
             else:
-                text = f"{i + 1}. \U0001F4C4 {filepath.name} [\u041E\u0440\u0438\u0433\u0438\u043D\u0430\u043B] - {size_mb:.1f} MB"
+                text = f"{i + 1}. \u2705 \U0001F4C4 {filepath.name} [\u041E\u0440\u0438\u0433\u0438\u043D\u0430\u043B] - {size_mb:.1f} MB"
+                style = (
+                    "color: #2e7d32; font-weight: bold; background: #e8f5e8;"
+                    " border: 1px solid #2e7d32; border-radius: 4px; padding: 2px;"
+                )
                 if original_name is None:
                     original_name = filepath.name
             widget = self.files_list.itemWidget(item)
             if isinstance(widget, QLabel):
                 widget.setText(text)
+                widget.setStyleSheet(style)
             item.setToolTip(f"{filepath.name}\n\u0420\u0430\u0437\u043C\u0435\u0440: {size_mb:.1f} MB")
 
         if original_name:
@@ -789,11 +801,17 @@ class SdlxliffMergeDialog(QDialog):
                 part = match.group(1)
                 total = match.group(2)
                 text = f"{i + 1}. \U0001F4CB {filepath.name} [\u0427\u0430\u0441\u0442\u044C {part}/{total}] - {size_mb:.1f} MB"
+                style = "color: #333;"
             else:
-                text = f"{i + 1}. \U0001F4C4 {filepath.name} [\u041E\u0440\u0438\u0433\u0438\u043D\u0430\u043B] - {size_mb:.1f} MB"
+                text = f"{i + 1}. \u2705 \U0001F4C4 {filepath.name} [\u041E\u0440\u0438\u0433\u0438\u043D\u0430\u043B] - {size_mb:.1f} MB"
+                style = (
+                    "color: #2e7d32; font-weight: bold; background: #e8f5e8;"
+                    " border: 1px solid #2e7d32; border-radius: 4px; padding: 2px;"
+                )
             widget = self.files_list.itemWidget(item)
             if isinstance(widget, QLabel):
                 widget.setText(text)
+                widget.setStyleSheet(style)
             item.setToolTip(f"{filepath.name}\n\u0420\u0430\u0437\u043C\u0435\u0440: {size_mb:.1f} MB")
 
         self.highlight_original_in_list()
