@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel,
     QSpinBox, QRadioButton, QPushButton, QFileDialog,
     QListWidget, QListWidgetItem, QMessageBox, QCheckBox,
-    QLineEdit, QFormLayout
+    QLineEdit, QFormLayout, QSplitter
 )
 from PySide6.QtCore import Qt, Signal
 import re
@@ -459,17 +459,19 @@ class SdlxliffMergeDialog(QDialog):
         """)
         layout.addWidget(header)
 
-        drop_group = self.create_drop_area_group()
-        layout.addWidget(drop_group)
+        self.drop_group = self.create_drop_area_group()
+        layout.addWidget(self.drop_group)
 
         self.files_group = self.create_files_group()
-        layout.addWidget(self.files_group)
-
         self.settings_group = self.create_settings_group()
-        layout.addWidget(self.settings_group)
-
         self.output_group = self.create_output_group()
-        layout.addWidget(self.output_group)
+
+        self.splitter = QSplitter(Qt.Vertical)
+        self.splitter.addWidget(self.files_group)
+        self.splitter.addWidget(self.settings_group)
+        self.splitter.addWidget(self.output_group)
+        self.splitter.setSizes([350, 100, 100])
+        layout.addWidget(self.splitter)
 
         buttons_layout = QHBoxLayout()
         buttons_layout.setSpacing(10)
@@ -514,6 +516,7 @@ class SdlxliffMergeDialog(QDialog):
 
         layout.addLayout(buttons_layout)
 
+        self.splitter.hide()
         self.files_group.hide()
         self.settings_group.hide()
         self.output_group.hide()
@@ -545,19 +548,31 @@ class SdlxliffMergeDialog(QDialog):
         self.files_list = QListWidget()
         self.files_list.setDragDropMode(QListWidget.InternalMove)
         self.files_list.setSelectionMode(QListWidget.SingleSelection)
-        self.files_list.setAlternatingRowColors(True)
+        self.files_list.setAlternatingRowColors(False)
+        self.files_list.setMinimumHeight(200)
+        self.files_list.setMaximumHeight(400)
         self.files_list.setStyleSheet("""
             QListWidget {
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                padding: 5px;
+                background: #f0f0f0;
+                border: 1px solid #ccc;
+                border-radius: 6px;
+                padding: 4px;
             }
             QListWidget::item {
-                padding: 8px;
-                border-bottom: 1px solid #f0f0f0;
+                background: white;
+                color: #333;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 6px;
+                margin: 4px;
+            }
+            QListWidget::item:hover {
+                background: #e0f2ff;
+                margin-left: 8px;
             }
             QListWidget::item:selected {
-                background: #e3f2fd;
+                background: #0d47a1;
+                color: white;
             }
         """)
 
@@ -695,6 +710,8 @@ class SdlxliffMergeDialog(QDialog):
         self.filepaths = [Path(f) for f in valid_files]
         self.update_files_list()
 
+        self.drop_group.hide()
+        self.splitter.show()
         self.files_group.show()
         self.settings_group.show()
         self.output_group.show()
@@ -708,38 +725,57 @@ class SdlxliffMergeDialog(QDialog):
         self.files_list.clear()
         original_name = None
         for i, filepath in enumerate(self.filepaths):
-            display = f"{i + 1}. {filepath.name}"
-            if not self._is_split_part_filename(filepath.name) and original_name is None:
-                display += " (оригинал)"
-                original_name = filepath.name
-            item = QListWidgetItem(display)
+            match = re.search(r"\.(\d+)of(\d+)\.sdlxliff$", filepath.name, re.IGNORECASE)
+            size_mb = filepath.stat().st_size / (1024 * 1024)
+            if match:
+                part = match.group(1)
+                total = match.group(2)
+                display = f"{i + 1}. \U0001F4CB {filepath.name} [\u0427\u0430\u0441\u0442\u044C {part}/{total}] - {size_mb:.1f} MB"
+            else:
+                display = f"{i + 1}. \U0001F4C4 {filepath.name} [\u041E\u0440\u0438\u0433\u0438\u043D\u0430\u043B] - {size_mb:.1f} MB"
+                if original_name is None:
+                    original_name = filepath.name
+
+            item = QListWidgetItem()
             item.setData(Qt.UserRole, filepath)
+            item.setToolTip(f"{filepath.name}\n\u0420\u0430\u0437\u043C\u0435\u0440: {size_mb:.1f} MB")
+            widget = QLabel(display)
+            widget.setMargin(2)
+            item.setSizeHint(widget.sizeHint())
             self.files_list.addItem(item)
+            self.files_list.setItemWidget(item, widget)
 
         if original_name:
-            self.original_file_label.setText(f"Оригинальный файл: {original_name}")
-            self.original_file_label.setVisible(True)
+            self.original_file_label.setText(f"\u2705 \u041E\u0440\u0438\u0433\u0438\u043D\u0430\u043B \u043D\u0430\u0439\u0434\u0435\u043D: {original_name}")
         else:
-            self.original_file_label.setText("Оригинальный файл не найден")
-            self.original_file_label.setVisible(True)
+            self.original_file_label.setText("\u26A0\uFE0F \u041E\u0440\u0438\u0433\u0438\u043D\u0430\u043B \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D")
+        self.original_file_label.setVisible(True)
 
     def highlight_original_in_list(self):
         original_name = None
         for i in range(self.files_list.count()):
             item = self.files_list.item(i)
             filepath = item.data(Qt.UserRole)
-            display = f"{i + 1}. {filepath.name}"
-            if not self._is_split_part_filename(filepath.name) and original_name is None:
-                display += " (оригинал)"
-                original_name = filepath.name
-            item.setText(display)
+            match = re.search(r"\.(\d+)of(\d+)\.sdlxliff$", filepath.name, re.IGNORECASE)
+            size_mb = filepath.stat().st_size / (1024 * 1024)
+            if match:
+                part = match.group(1)
+                total = match.group(2)
+                text = f"{i + 1}. \U0001F4CB {filepath.name} [\u0427\u0430\u0441\u0442\u044C {part}/{total}] - {size_mb:.1f} MB"
+            else:
+                text = f"{i + 1}. \U0001F4C4 {filepath.name} [\u041E\u0440\u0438\u0433\u0438\u043D\u0430\u043B] - {size_mb:.1f} MB"
+                if original_name is None:
+                    original_name = filepath.name
+            widget = self.files_list.itemWidget(item)
+            if isinstance(widget, QLabel):
+                widget.setText(text)
+            item.setToolTip(f"{filepath.name}\n\u0420\u0430\u0437\u043C\u0435\u0440: {size_mb:.1f} MB")
 
         if original_name:
-            self.original_file_label.setText(f"Оригинальный файл: {original_name}")
-            self.original_file_label.setVisible(True)
+            self.original_file_label.setText(f"\u2705 \u041E\u0440\u0438\u0433\u0438\u043D\u0430\u043B \u043D\u0430\u0439\u0434\u0435\u043D: {original_name}")
         else:
-            self.original_file_label.setText("Оригинальный файл не найден")
-            self.original_file_label.setVisible(True)
+            self.original_file_label.setText("\u26A0\uFE0F \u041E\u0440\u0438\u0433\u0438\u043D\u0430\u043B \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D")
+        self.original_file_label.setVisible(True)
 
     def on_files_reordered(self):
         self.filepaths.clear()
@@ -747,7 +783,18 @@ class SdlxliffMergeDialog(QDialog):
             item = self.files_list.item(i)
             filepath = item.data(Qt.UserRole)
             self.filepaths.append(filepath)
-            item.setText(f"{i + 1}. {filepath.name}")
+            match = re.search(r"\.(\d+)of(\d+)\.sdlxliff$", filepath.name, re.IGNORECASE)
+            size_mb = filepath.stat().st_size / (1024 * 1024)
+            if match:
+                part = match.group(1)
+                total = match.group(2)
+                text = f"{i + 1}. \U0001F4CB {filepath.name} [\u0427\u0430\u0441\u0442\u044C {part}/{total}] - {size_mb:.1f} MB"
+            else:
+                text = f"{i + 1}. \U0001F4C4 {filepath.name} [\u041E\u0440\u0438\u0433\u0438\u043D\u0430\u043B] - {size_mb:.1f} MB"
+            widget = self.files_list.itemWidget(item)
+            if isinstance(widget, QLabel):
+                widget.setText(text)
+            item.setToolTip(f"{filepath.name}\n\u0420\u0430\u0437\u043C\u0435\u0440: {size_mb:.1f} MB")
 
         self.highlight_original_in_list()
         self.files_reordered.emit(self.filepaths)
